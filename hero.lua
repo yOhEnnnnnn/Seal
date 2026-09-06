@@ -36,4 +36,5 @@ function Hero:perform_attack()
 end
 
 require("hero.cinder")
+require("hero.arc")
 require("hero.guard")

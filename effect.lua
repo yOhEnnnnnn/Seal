@@ -1,3 +1,71 @@
+LightningArc = Object:extend()
+LightningArc:implement(GameObject)
+
+function LightningArc:init(args)
+  self:init_game_object(args)
+  self.time = 0
+  self.duration = self.duration or 0.1
+  self.width = 3
+  self.color = self.color or {1 / 255, 155 / 255, 214 / 255, 1}
+  self:generate()
+  self.particles = {}
+  for _ = 1, 2 do
+    self.particles[#self.particles + 1] = HitParticle{x = self.x, y = self.y, color = self.color}
+  end
+  self.particles[#self.particles + 1] = HitParticle{x = self.target_x, y = self.target_y, color = self.color}
+end
+
+-- Ported from SNKRX LightningLine (objects.lua); see licenses/SNKRX-LICENSE.txt.
+function LightningArc:generate()
+  local lines = {{x1 = self.x, y1 = self.y, x2 = self.target_x, y2 = self.target_y}}
+  local offset = self.max_offset or 8
+  for _ = 1, self.generations or 3 do
+    for i = #lines, 1, -1 do
+      local line = table.remove(lines, i)
+      local dx, dy = line.x2 - line.x1, line.y2 - line.y1
+      local length = math.sqrt(dx * dx + dy * dy)
+      local nx, ny = 0, 0
+      if length > 0 then nx, ny = -dy / length, dx / length end
+      local x = (line.x1 + line.x2) / 2 + nx * (love.math.random() * 2 - 1) * offset
+      local y = (line.y1 + line.y2) / 2 + ny * (love.math.random() * 2 - 1) * offset
+      lines[#lines + 1] = {x1 = line.x1, y1 = line.y1, x2 = x, y2 = y}
+      lines[#lines + 1] = {x1 = x, y1 = y, x2 = line.x2, y2 = line.y2}
+    end
+    offset = offset / 2
+  end
+  self.points = {}
+  while #lines > 0 do
+    local nearest_distance, nearest_index = math.huge, 1
+    for i, line in ipairs(lines) do
+      local distance = (line.x1 - self.x) ^ 2 + (line.y1 - self.y) ^ 2
+      if distance < nearest_distance then nearest_distance, nearest_index = distance, i end
+    end
+    local line = table.remove(lines, nearest_index)
+    self.points[#self.points + 1] = line.x1
+    self.points[#self.points + 1] = line.y1
+  end
+end
+
+function LightningArc:update(dt)
+  self.time = self.time + dt
+  self.width = 3 - 2 * math.min(self.time / self.duration, 1)
+  for i = #self.particles, 1, -1 do
+    self.particles[i]:update(dt)
+    if self.particles[i].dead then table.remove(self.particles, i) end
+  end
+  if self.time >= self.duration and #self.particles == 0 then self.dead = true end
+end
+
+function LightningArc:draw()
+  if self.time < self.duration then
+    graphics.polyline(self.color, self.width, unpack(self.points))
+    local foreground = {218 / 255, 218 / 255, 218 / 255, 1}
+    graphics.circle(self.x, self.y, 6, foreground)
+    graphics.circle(self.target_x, self.target_y, 6, foreground)
+  end
+  for _, particle in ipairs(self.particles) do particle:draw() end
+end
+
 HitParticle = Object:extend()
 HitParticle:implement(GameObject)
 

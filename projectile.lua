@@ -39,6 +39,7 @@ function Projectile:check_hits(enemies)
       self:is_colliding_with_object(enemy) then
       enemy:hit(self.damage)
       self.hit_enemies[enemy] = true
+      if self.on_hit then self.on_hit(self, enemy, enemies) end
 
       if self.pierce <= 0 then
         self.dead = true

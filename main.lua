@@ -31,7 +31,11 @@ local colors = {
   red = {233 / 255, 29 / 255, 57 / 255, 1},
 }
 
-function love.load()
+function love.load(args)
+  local arc_test = false
+  for _, arg in ipairs(args or {}) do
+    if arg == "--arc-test" then arc_test = true end
+  end
   love.graphics.setDefaultFilter("nearest", "nearest")
   love.graphics.setBackgroundColor(0, 0, 0, 1)
   love.graphics.setLineStyle("rough")
@@ -79,11 +83,21 @@ function love.load()
       effects = effects,
     },
   }
+  if arc_test then
+    enemies = {}
+    for _, position in ipairs({{285, 110}, {285, 160}, {365, 85}, {385, 135}, {365, 185}, {440, 135}}) do
+      enemies[#enemies + 1] = Enemy{
+        x = position[1], y = position[2], color = colors.red,
+        hit_color = colors.foreground, hp_bar_background = colors.hp_bar_background,
+        effects = effects, invincible = true, stationary = true,
+      }
+    end
+  end
   player = Player{
     x = 240,
     y = 135,
     heroes = {
-      Cinder{color = colors.yellow},
+      arc_test and Arc{color = colors.blue, level = 3} or Cinder{color = colors.yellow},
       Guard{color = colors.blue},
     },
   }
