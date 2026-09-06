@@ -37,4 +37,3 @@ end
 
 require("hero.cinder")
 require("hero.arc")
-require("hero.guard")

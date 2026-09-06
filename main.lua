@@ -98,7 +98,7 @@ function love.load(args)
     y = 135,
     heroes = {
       arc_test and Arc{color = colors.blue, level = 3} or Cinder{color = colors.yellow},
-      Guard{color = colors.blue},
+      arc_test and Cinder{color = colors.yellow} or Arc{color = colors.blue},
     },
   }
 end
