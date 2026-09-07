@@ -42,3 +42,4 @@ end
 require("hero.cinder")
 require("hero.arc")
 require("hero.rime")
+require("hero.wisp")

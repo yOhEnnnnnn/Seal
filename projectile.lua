@@ -63,3 +63,5 @@ function Projectile:draw()
   graphics.rectangle(0, 0, self.width, self.height, 1, 1, self.color)
   love.graphics.pop()
 end
+
+require("projectile.wisp")

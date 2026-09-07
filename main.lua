@@ -29,15 +29,18 @@ local colors = {
   yellow = {250 / 255, 207 / 255, 0, 1},
   blue = {1 / 255, 155 / 255, 214 / 255, 1},
   mint = {130 / 255, 220 / 255, 203 / 255, 1},
+  lavender = {184 / 255, 145 / 255, 1, 1},
   red = {233 / 255, 29 / 255, 57 / 255, 1},
 }
 
 function love.load(args)
   local arc_test = false
   local rime_test = false
+  local wisp_test = false
   for _, arg in ipairs(args or {}) do
     if arg == "--arc-test" then arc_test = true end
     if arg == "--rime-test" then rime_test = true end
+    if arg == "--wisp-test" then wisp_test = true end
   end
   love.graphics.setDefaultFilter("nearest", "nearest")
   love.graphics.setBackgroundColor(0, 0, 0, 1)
@@ -95,25 +98,52 @@ function love.load(args)
         effects = effects, invincible = true, stationary = true,
       }
     end
+  elseif wisp_test then
+    enemies = {}
+    for _, position in ipairs({
+      {285, 80}, {330, 80}, {375, 80},
+      {285, 115}, {330, 115}, {375, 115},
+      {285, 155}, {330, 155}, {375, 155},
+      {285, 190}, {330, 190}, {375, 190},
+    }) do
+      enemies[#enemies + 1] = Enemy{
+        x = position[1], y = position[2], hp = 6,
+        color = colors.red, hit_color = colors.foreground,
+        hp_bar_background = colors.hp_bar_background,
+        effects = effects, stationary = true,
+      }
+    end
   end
   local heroes = {
     Cinder{color = colors.yellow},
     Arc{color = colors.blue},
     Rime{color = colors.mint},
+    Wisp{color = colors.lavender},
   }
   if arc_test then
     heroes = {
       Arc{color = colors.blue, level = 3},
       Cinder{color = colors.yellow},
       Rime{color = colors.mint},
+      Wisp{color = colors.lavender},
     }
   elseif rime_test then
     heroes = {
       Rime{color = colors.mint, level = 3},
       Cinder{color = colors.yellow},
       Arc{color = colors.blue},
+      Wisp{color = colors.lavender},
+    }
+  elseif wisp_test then
+    heroes = {
+      Wisp{color = colors.lavender, level = 3},
+      Cinder{color = colors.yellow},
+      Arc{color = colors.blue},
+      Rime{color = colors.mint},
     }
   end
+
+  if wisp_test then heroes[1].attack_cooldown_time = 1.5 end
 
   player = Player{
     x = 240,
