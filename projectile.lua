@@ -38,6 +38,9 @@ function Projectile:check_hits(enemies)
     if not enemy.dead and not self.hit_enemies[enemy] and
       self:is_colliding_with_object(enemy) then
       enemy:hit(self.damage)
+      if self.slow_multiplier and enemy.apply_slow then
+        enemy:apply_slow(self.slow_multiplier, self.slow_duration)
+      end
       self.hit_enemies[enemy] = true
       if self.on_hit then self.on_hit(self, enemy, enemies) end
 

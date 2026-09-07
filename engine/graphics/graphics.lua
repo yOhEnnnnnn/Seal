@@ -51,6 +51,11 @@ function graphics.circle(x, y, radius, color, line_width)
   graphics.shape("circle", color, line_width, x, y, radius)
 end
 
+function graphics.arc(arc_type, x, y, radius, angle1, angle2, color, line_width)
+  graphics.shape("arc", color, line_width,
+    arc_type, x, y, radius, angle1, angle2)
+end
+
 function graphics.line(x1, y1, x2, y2, color, line_width)
   love.graphics.push("all")
   set_style(color, line_width)

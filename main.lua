@@ -28,13 +28,16 @@ local colors = {
   foreground = {218 / 255, 218 / 255, 218 / 255, 1},
   yellow = {250 / 255, 207 / 255, 0, 1},
   blue = {1 / 255, 155 / 255, 214 / 255, 1},
+  mint = {130 / 255, 220 / 255, 203 / 255, 1},
   red = {233 / 255, 29 / 255, 57 / 255, 1},
 }
 
 function love.load(args)
   local arc_test = false
+  local rime_test = false
   for _, arg in ipairs(args or {}) do
     if arg == "--arc-test" then arc_test = true end
+    if arg == "--rime-test" then rime_test = true end
   end
   love.graphics.setDefaultFilter("nearest", "nearest")
   love.graphics.setBackgroundColor(0, 0, 0, 1)
@@ -93,13 +96,29 @@ function love.load(args)
       }
     end
   end
+  local heroes = {
+    Cinder{color = colors.yellow},
+    Arc{color = colors.blue},
+    Rime{color = colors.mint},
+  }
+  if arc_test then
+    heroes = {
+      Arc{color = colors.blue, level = 3},
+      Cinder{color = colors.yellow},
+      Rime{color = colors.mint},
+    }
+  elseif rime_test then
+    heroes = {
+      Rime{color = colors.mint, level = 3},
+      Cinder{color = colors.yellow},
+      Arc{color = colors.blue},
+    }
+  end
+
   player = Player{
     x = 240,
     y = 135,
-    heroes = {
-      arc_test and Arc{color = colors.blue, level = 3} or Cinder{color = colors.yellow},
-      arc_test and Cinder{color = colors.yellow} or Arc{color = colors.blue},
-    },
+    heroes = heroes,
   }
 end
 

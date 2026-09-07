@@ -24,6 +24,10 @@ function Hero:get_attack_interval()
   return self.attack_interval
 end
 
+function Hero:get_target_priority()
+  return 0
+end
+
 function Hero:attack(player, target, enemies, projectiles, effects)
   if not self:can_attack() then return end
   if not self:perform_attack(player, target, enemies, projectiles, effects) then return end
@@ -37,3 +41,4 @@ end
 
 require("hero.cinder")
 require("hero.arc")
+require("hero.rime")

@@ -128,6 +128,107 @@ function HitParticle:draw()
   love.graphics.pop()
 end
 
+SlowParticle = Object:extend()
+SlowParticle:implement(GameObject)
+
+function SlowParticle:init(args)
+  self:init_game_object(args)
+  self.vx = self.vx or 0
+  self.vy = self.vy or 0
+  self.size = self.size or love.math.random(1, 2)
+  self.duration = self.duration or 0.28
+  self.time = 0
+end
+
+function SlowParticle:update(dt)
+  self.time = math.min(self.time + dt, self.duration)
+  self.x = self.x + self.vx * dt
+  self.y = self.y + self.vy * dt
+  if self.time == self.duration then self.dead = true end
+end
+
+function SlowParticle:draw()
+  local alpha = 1 - self.time / self.duration
+  graphics.rectangle(self.x, self.y, self.size, self.size,
+    nil, nil, graphics.color_with_alpha(self.color, alpha))
+end
+
+FrostCircleArea = Object:extend()
+FrostCircleArea:implement(GameObject)
+
+function FrostCircleArea:init(args)
+  self:init_game_object(args)
+  self.radius = self.radius or 64
+  self.duration = self.duration or 4.0
+  self.damage = self.damage or 5
+  self.slow_multiplier = self.slow_multiplier or 0.4
+  self.tick_interval = self.tick_interval or 0.1
+  self.slow_duration = self.tick_interval * 2
+  self.fill_alpha = self.fill_alpha or 0.06
+  self.entry_blink_duration = 0.16
+  self.exit_blink_duration = 0.32
+  self.blink_interval = 0.08
+  self.arc_span = math.pi / 5
+  self.r = love.math.random() * 2 * math.pi
+  self.rotation_speed = (love.math.random() - 0.5) * math.pi / 2
+  self.hit = {}
+  self.time = 0
+  self.tick_time = 0
+end
+
+function FrostCircleArea:contains(enemy)
+  local dx, dy = enemy.x - self.x, enemy.y - self.y
+  return dx * dx + dy * dy <= self.radius * self.radius
+end
+
+function FrostCircleArea:affect_enemies(enemies)
+  for _, enemy in ipairs(enemies or {}) do
+    if not enemy.dead and self:contains(enemy) then
+      if not self.hit[enemy] then
+        enemy:hit(self.damage)
+        self.hit[enemy] = true
+      end
+      enemy:apply_slow(self.slow_multiplier, self.slow_duration)
+    end
+  end
+end
+
+function FrostCircleArea:update(dt, enemies)
+  self.time = math.min(self.time + dt, self.duration)
+  self.tick_time = self.tick_time - dt
+  self.r = self.r + self.rotation_speed * dt
+
+  if self.tick_time <= 0 then
+    self.tick_time = self.tick_interval
+    self:affect_enemies(enemies)
+  end
+
+  if self.time == self.duration then self.dead = true end
+end
+
+function FrostCircleArea:draw()
+  local remaining = self.duration - self.time
+  local entry_blinking = self.time < self.entry_blink_duration
+  local exit_blinking = remaining <= self.exit_blink_duration
+
+  if entry_blinking then
+    if math.floor(self.time / self.blink_interval) % 2 == 1 then return end
+  elseif exit_blinking then
+    local elapsed = self.exit_blink_duration - remaining
+    if math.floor(elapsed / self.blink_interval) % 2 == 1 then return end
+  end
+
+  local outline = entry_blinking and {1, 1, 1, 1} or self.color
+  graphics.circle(self.x, self.y, self.radius,
+    graphics.color_with_alpha(self.color, self.fill_alpha))
+  for index = 1, 4 do
+    local center = self.r + (index - 1) * math.pi / 2 + math.pi / 4
+    graphics.arc("open", self.x, self.y, self.radius,
+      center - self.arc_span / 2, center + self.arc_span / 2,
+      outline, 2)
+  end
+end
+
 HitCircle = Object:extend()
 HitCircle:implement(GameObject)
 

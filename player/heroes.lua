@@ -16,7 +16,7 @@ end
 
 function Player:get_standby_hero()
   if #self.heroes < 2 then return end
-  return self.heroes[self.active_hero_index == 1 and 2 or 1]
+  return self.heroes[self.active_hero_index % #self.heroes + 1]
 end
 
 function Player:get_color()
@@ -49,7 +49,7 @@ function Player:update_switch(dt)
 
   self.switch_time = math.min(self.switch_time + dt, self.switch_duration)
   if not self.hero_switched and self.switch_time >= self.switch_shrink_end then
-    self.active_hero_index = self.active_hero_index == 1 and 2 or 1
+    self.active_hero_index = self.active_hero_index % #self.heroes + 1
     self.hero_switched = true
   end
   if self.switch_time == self.switch_duration then self.switching = false end

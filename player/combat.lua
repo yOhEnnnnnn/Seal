@@ -3,13 +3,18 @@ function Player:get_attack_target(enemies)
   if not hero then return end
 
   local target
+  local target_priority
   local nearest_distance = hero.attack_range * hero.attack_range
   for _, enemy in ipairs(enemies) do
     if not enemy.dead then
       local dx, dy = enemy.x - self.x, enemy.y - self.y
       local distance = dx * dx + dy * dy
-      if distance <= nearest_distance then
+      local priority = hero:get_target_priority(enemy)
+      if distance <= hero.attack_range * hero.attack_range and
+        (target_priority == nil or priority > target_priority or
+          priority == target_priority and distance <= nearest_distance) then
         target = enemy
+        target_priority = priority
         nearest_distance = distance
       end
     end
