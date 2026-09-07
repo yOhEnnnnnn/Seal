@@ -82,6 +82,12 @@ local function remap(value, in_min, in_max, out_min, out_max)
   return out_min + (out_max - out_min) * t
 end
 
+local function get_fade_alpha(time, duration, fade_in_duration, fade_out_duration)
+  local fade_in = cubic_in_out(math.min(time / fade_in_duration, 1))
+  local fade_out = cubic_in_out(math.min((duration - time) / fade_out_duration, 1))
+  return math.min(fade_in, fade_out)
+end
+
 local function draw_seal_area_frame(x, y, size, color, fill_color)
   local half = size / 2
   local corner = size * 0.16
@@ -165,9 +171,8 @@ function FrostCircleArea:init(args)
   self.tick_interval = self.tick_interval or 0.1
   self.slow_duration = self.tick_interval * 2
   self.fill_alpha = self.fill_alpha or 0.06
-  self.entry_blink_duration = 0.16
-  self.exit_blink_duration = 0.32
-  self.blink_interval = 0.08
+  self.fade_in_duration = 0.3
+  self.fade_out_duration = 0.5
   self.arc_span = math.pi / 5
   self.r = love.math.random() * 2 * math.pi
   self.rotation_speed = (love.math.random() - 0.5) * math.pi / 2
@@ -207,20 +212,11 @@ function FrostCircleArea:update(dt, enemies)
 end
 
 function FrostCircleArea:draw()
-  local remaining = self.duration - self.time
-  local entry_blinking = self.time < self.entry_blink_duration
-  local exit_blinking = remaining <= self.exit_blink_duration
-
-  if entry_blinking then
-    if math.floor(self.time / self.blink_interval) % 2 == 1 then return end
-  elseif exit_blinking then
-    local elapsed = self.exit_blink_duration - remaining
-    if math.floor(elapsed / self.blink_interval) % 2 == 1 then return end
-  end
-
-  local outline = entry_blinking and {1, 1, 1, 1} or self.color
+  local alpha = get_fade_alpha(self.time, self.duration,
+    self.fade_in_duration, self.fade_out_duration)
+  local outline = graphics.color_with_alpha(self.color, alpha)
   graphics.circle(self.x, self.y, self.radius,
-    graphics.color_with_alpha(self.color, self.fill_alpha))
+    graphics.color_with_alpha(self.color, self.fill_alpha * alpha))
   for index = 1, 4 do
     local center = self.r + (index - 1) * math.pi / 2 + math.pi / 4
     graphics.arc("open", self.x, self.y, self.radius,
@@ -324,9 +320,8 @@ function BurningSquareArea:init(args)
   self.damage = self.damage or 2
   self.rotation = self.rotation or 0
   self.fill_alpha = self.fill_alpha or 0.065
-  self.entry_blink_duration = 0.16
-  self.exit_blink_duration = 0.32
-  self.blink_interval = 0.08
+  self.fade_in_duration = 0.3
+  self.fade_out_duration = 0.5
   self.time = 0
   self.tick_time = 0
 end
@@ -358,25 +353,10 @@ function BurningSquareArea:damage_enemies(enemies)
 end
 
 function BurningSquareArea:draw()
-  local progress = self.time / self.duration
-  local remaining = self.duration - self.time
-  local entry_blinking = self.time < self.entry_blink_duration
-  local exit_blinking = remaining <= self.exit_blink_duration
-
-  if entry_blinking then
-    local blink_index = math.floor(self.time / self.blink_interval)
-    if blink_index % 2 == 1 then return end
-  elseif exit_blinking then
-    local blink_index = math.floor((self.exit_blink_duration - remaining) / self.blink_interval)
-    if blink_index % 2 == 1 then return end
-  end
-
-  local flashing = entry_blinking or exit_blinking
-  local alpha = math.max(1 - progress * 0.45, 0)
-  local heat = 0.55 + 0.45 * math.sin(self.time * 7) ^ 2
-  local color = flashing and {1, 1, 1, 1} or
-    graphics.color_with_alpha(self.color, alpha)
-  local fill_color = graphics.color_with_alpha(self.color, self.fill_alpha * heat)
+  local alpha = get_fade_alpha(self.time, self.duration,
+    self.fade_in_duration, self.fade_out_duration)
+  local color = graphics.color_with_alpha(self.color, alpha)
+  local fill_color = graphics.color_with_alpha(self.color, self.fill_alpha * alpha)
 
   love.graphics.push("all")
   love.graphics.translate(self.x, self.y)
