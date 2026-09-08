@@ -36,6 +36,13 @@ function Hero:get_target_priority()
   return 0
 end
 
+function Hero:play_projectile_attack_sound()
+  if not projectile_attack_sound then return end
+  projectile_attack_sound:stop()
+  projectile_attack_sound:setPitch(0.95 + love.math.random() * 0.1)
+  projectile_attack_sound:play()
+end
+
 function Hero:attack(player, target, enemies, projectiles, effects)
   if not self:can_attack() then return end
   if not self:perform_attack(player, target, enemies, projectiles, effects) then return end
@@ -51,3 +58,5 @@ require("hero.cinder")
 require("hero.arc")
 require("hero.rime")
 require("hero.wisp")
+require("hero.shard")
+require("hero.volley")

@@ -30,6 +30,8 @@ local colors = {
   blue = {1 / 255, 155 / 255, 214 / 255, 1},
   mint = {130 / 255, 220 / 255, 203 / 255, 1},
   lavender = {184 / 255, 145 / 255, 1, 1},
+  pink = {242 / 255, 116 / 255, 173 / 255, 1},
+  lime = {166 / 255, 219 / 255, 70 / 255, 1},
   red = {233 / 255, 29 / 255, 57 / 255, 1},
 }
 
@@ -38,11 +40,15 @@ function love.load(args)
   local arc_test = false
   local rime_test = false
   local wisp_test = false
+  local shard_test = false
+  local volley_test = false
   for _, arg in ipairs(args or {}) do
     if arg == "--cinder-test" then cinder_test = true end
     if arg == "--arc-test" then arc_test = true end
     if arg == "--rime-test" then rime_test = true end
     if arg == "--wisp-test" then wisp_test = true end
+    if arg == "--shard-test" then shard_test = true end
+    if arg == "--volley-test" then volley_test = true end
   end
   love.graphics.setDefaultFilter("nearest", "nearest")
   love.graphics.setBackgroundColor(0, 0, 0, 1)
@@ -51,6 +57,10 @@ function love.load(args)
   ui_font = love.graphics.newFont("assets/fonts/BoiledPasta.ttf", 16)
   ui_font:setFilter("nearest", "nearest")
   love.graphics.setFont(ui_font)
+
+  projectile_attack_sound = love.audio.newSource(
+    "assets/sounds/projectile_attack.wav", "static")
+  projectile_attack_sound:setVolume(0.2)
 
   game_canvas = Canvas(gw, gh)
   projectiles = {}
@@ -127,6 +137,29 @@ function love.load(args)
         effects = effects, stationary = true,
       }
     end
+  elseif shard_test then
+    enemies = {}
+    for _, position in ipairs({
+      {300, 135},
+      {324, 135}, {312, 156}, {288, 156},
+      {276, 135}, {288, 114}, {312, 114},
+      {360, 105}, {360, 165},
+    }) do
+      enemies[#enemies + 1] = Enemy{
+        x = position[1], y = position[2], color = colors.red,
+        hit_color = colors.foreground, hp_bar_background = colors.hp_bar_background,
+        effects = effects, invincible = true, stationary = true,
+      }
+    end
+  elseif volley_test then
+    enemies = {}
+    for _, position in ipairs({{390, 135}, {420, 92}, {420, 178}}) do
+      enemies[#enemies + 1] = Enemy{
+        x = position[1], y = position[2], color = colors.red,
+        hit_color = colors.foreground, hp_bar_background = colors.hp_bar_background,
+        effects = effects, invincible = true, stationary = true,
+      }
+    end
   end
   local heroes = {
     Cinder{color = colors.yellow},
@@ -158,6 +191,20 @@ function love.load(args)
   elseif wisp_test then
     heroes = {
       Wisp{color = colors.lavender, level = 3},
+      Cinder{color = colors.yellow},
+      Arc{color = colors.blue},
+      Rime{color = colors.mint},
+    }
+  elseif shard_test then
+    heroes = {
+      Shard{color = colors.pink, level = 3},
+      Cinder{color = colors.yellow},
+      Arc{color = colors.blue},
+      Rime{color = colors.mint},
+    }
+  elseif volley_test then
+    heroes = {
+      Volley{color = colors.lime, level = 3},
       Cinder{color = colors.yellow},
       Arc{color = colors.blue},
       Rime{color = colors.mint},

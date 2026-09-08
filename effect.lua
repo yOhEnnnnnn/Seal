@@ -44,6 +44,8 @@ function LightningArc:generate()
     self.points[#self.points + 1] = line.x1
     self.points[#self.points + 1] = line.y1
   end
+  self.points[#self.points + 1] = self.target_x
+  self.points[#self.points + 1] = self.target_y
 end
 
 function LightningArc:update(dt)
