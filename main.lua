@@ -34,15 +34,15 @@ local colors = {
 }
 
 function love.load(args)
+  local cinder_test = false
   local arc_test = false
   local rime_test = false
   local wisp_test = false
-  local scribe_test = false
   for _, arg in ipairs(args or {}) do
+    if arg == "--cinder-test" then cinder_test = true end
     if arg == "--arc-test" then arc_test = true end
     if arg == "--rime-test" then rime_test = true end
     if arg == "--wisp-test" then wisp_test = true end
-    if arg == "--scribe-test" then scribe_test = true end
   end
   love.graphics.setDefaultFilter("nearest", "nearest")
   love.graphics.setBackgroundColor(0, 0, 0, 1)
@@ -91,9 +91,21 @@ function love.load(args)
       effects = effects,
     },
   }
-  if arc_test then
+  if cinder_test then
     enemies = {}
-    for _, position in ipairs({{285, 110}, {285, 160}, {365, 85}, {385, 135}, {365, 185}, {440, 135}}) do
+    for _, position in ipairs({{284, 135}, {310, 115}, {310, 155}, {365, 135}}) do
+      enemies[#enemies + 1] = Enemy{
+        x = position[1], y = position[2], color = colors.red,
+        hit_color = colors.foreground, hp_bar_background = colors.hp_bar_background,
+        effects = effects, invincible = true, stationary = true,
+      }
+    end
+  elseif arc_test then
+    enemies = {}
+    for _, position in ipairs({
+      {285, 110}, {285, 160}, {365, 85},
+      {385, 135}, {365, 185}, {440, 135},
+    }) do
       enemies[#enemies + 1] = Enemy{
         x = position[1], y = position[2], color = colors.red,
         hit_color = colors.foreground, hp_bar_background = colors.hp_bar_background,
@@ -115,20 +127,6 @@ function love.load(args)
         effects = effects, stationary = true,
       }
     end
-  elseif scribe_test then
-    enemies = {}
-    for _, position in ipairs({
-      {285, 75}, {330, 75}, {375, 75},
-      {285, 115}, {330, 115}, {375, 115},
-      {285, 155}, {330, 155}, {375, 155},
-      {285, 195}, {330, 195}, {375, 195},
-    }) do
-      enemies[#enemies + 1] = Enemy{
-        x = position[1], y = position[2], color = colors.red,
-        hit_color = colors.foreground, hp_bar_background = colors.hp_bar_background,
-        effects = effects, invincible = true, stationary = true,
-      }
-    end
   end
   local heroes = {
     Cinder{color = colors.yellow},
@@ -136,7 +134,14 @@ function love.load(args)
     Rime{color = colors.mint},
     Wisp{color = colors.lavender},
   }
-  if arc_test then
+  if cinder_test then
+    heroes = {
+      Cinder{color = colors.yellow, level = 3},
+      Arc{color = colors.blue},
+      Rime{color = colors.mint},
+      Wisp{color = colors.lavender},
+    }
+  elseif arc_test then
     heroes = {
       Arc{color = colors.blue, level = 3},
       Cinder{color = colors.yellow},
@@ -153,13 +158,6 @@ function love.load(args)
   elseif wisp_test then
     heroes = {
       Wisp{color = colors.lavender, level = 3},
-      Cinder{color = colors.yellow},
-      Arc{color = colors.blue},
-      Rime{color = colors.mint},
-    }
-  elseif scribe_test then
-    heroes = {
-      Scribe{color = colors.foreground, level = 3},
       Cinder{color = colors.yellow},
       Arc{color = colors.blue},
       Rime{color = colors.mint},

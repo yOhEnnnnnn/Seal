@@ -24,6 +24,14 @@ function Hero:get_attack_interval()
   return self.attack_interval
 end
 
+function Hero:get_level_damage_multiplier()
+  return self.level >= 2 and 1.2 or 1
+end
+
+function Hero:get_shared_health_bonus()
+  return self.level >= 2 and 5 or 0
+end
+
 function Hero:get_target_priority()
   return 0
 end
@@ -43,4 +51,3 @@ require("hero.cinder")
 require("hero.arc")
 require("hero.rime")
 require("hero.wisp")
-require("hero.scribe")

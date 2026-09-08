@@ -1,5 +1,6 @@
 function Player:init_player_heroes()
   self.heroes = self.heroes or {}
+  self.hero_health_bonuses = {}
   self.active_hero_index = self.active_hero_index or 1
   self.switching = false
   self.switch_time = 0
@@ -8,6 +9,22 @@ function Player:init_player_heroes()
   self.switch_shrink_end = self.switch_shrink_end or 0.06
   self.switch_pop_end = self.switch_pop_end or 0.14
   self.switch_duration = self.switch_duration or 0.20
+  for _, hero in ipairs(self.heroes) do self:sync_hero_health_bonus(hero) end
+end
+
+function Player:sync_hero_health_bonus(hero)
+  local old_bonus = self.hero_health_bonuses[hero] or 0
+  local new_bonus = hero:get_shared_health_bonus()
+  local difference = new_bonus - old_bonus
+  if difference == 0 then return end
+
+  self.hero_health_bonuses[hero] = new_bonus
+  self.max_hp = self.max_hp + difference
+  if difference > 0 then
+    self.hp = math.min(self.hp + difference, self.max_hp)
+  else
+    self.hp = math.min(self.hp, self.max_hp)
+  end
 end
 
 function Player:get_active_hero()
@@ -40,6 +57,7 @@ function Player:set_active_hero_level(level)
   local hero = self:get_active_hero()
   if not hero then return end
   hero:set_level(level)
+  self:sync_hero_health_bonus(hero)
   hero.attack_cooldown_time = 0
 end
 

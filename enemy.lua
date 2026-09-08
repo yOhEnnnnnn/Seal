@@ -21,10 +21,8 @@ function Enemy:init(args)
   self.invincible = self.invincible or false
   self.stationary = self.stationary or false
   self.enemy_type = self.enemy_type or "normal"
-  self.slow_color = self.slow_color or {130 / 255, 220 / 255, 203 / 255, 1}
   self.slow_multiplier = 1
   self.slow_time = 0
-  self.slow_particle_time = 0
   self.hit_spring = Spring(1)
   self.hit_duration = 0.15
   self.hit_time = 0
@@ -56,26 +54,8 @@ function Enemy:update_statuses(dt)
   self.slow_time = math.max(self.slow_time - dt, 0)
   if self.slow_time == 0 then
     self.slow_multiplier = 1
-    self.slow_particle_time = 0
-  else
-    self:update_slow_particles(dt)
   end
   self.max_v = self.base_max_v * self.slow_multiplier
-end
-
-function Enemy:update_slow_particles(dt)
-  self.slow_particle_time = self.slow_particle_time - dt
-  if self.slow_particle_time > 0 then return end
-
-  local side_offset = (love.math.random() * 2 - 1) * self.width / 2
-  self.effects[#self.effects + 1] = SlowParticle{
-    x = self.x - self.heading_x * self.width / 2 - self.side_x * side_offset,
-    y = self.y - self.heading_y * self.width / 2 - self.side_y * side_offset,
-    vx = -self.heading_x * 12 - self.side_x * side_offset,
-    vy = -self.heading_y * 12 - self.side_y * side_offset,
-    color = self.slow_color,
-  }
-  self.slow_particle_time = 0.11 + love.math.random() * 0.07
 end
 
 function Enemy:apply_slow(multiplier, duration)

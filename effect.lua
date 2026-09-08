@@ -88,6 +88,46 @@ local function get_fade_alpha(time, duration, fade_in_duration, fade_out_duratio
   return math.min(fade_in, fade_out)
 end
 
+local function init_area_pop(area)
+  area.pop_duration = 0.05
+  area.pop_time = 0
+  area.pop_scale = 0
+  area.pop_spring = Spring(1, 200, 10)
+  area.pop_pulled = false
+end
+
+local function update_area_pop(area, dt)
+  area.pop_spring:update(dt)
+  if area.pop_time == area.pop_duration then return end
+
+  area.pop_time = math.min(area.pop_time + dt, area.pop_duration)
+  area.pop_scale = cubic_in_out(area.pop_time / area.pop_duration)
+  if area.pop_time == area.pop_duration and not area.pop_pulled then
+    area.pop_spring:pull(0.15, 200, 10)
+    area.pop_pulled = true
+  end
+end
+
+local function draw_segmented_circle_area(area)
+  local alpha = get_fade_alpha(area.time, area.duration,
+    area.fade_in_duration, area.fade_out_duration)
+  local outline = graphics.color_with_alpha(area.color, alpha)
+  local scale = area.pop_scale * area.pop_spring.x
+
+  love.graphics.push("all")
+  love.graphics.translate(area.x, area.y)
+  love.graphics.scale(scale, scale)
+  graphics.circle(0, 0, area.radius,
+    graphics.color_with_alpha(area.color, area.fill_alpha * alpha))
+  for index = 1, 4 do
+    local center = area.r + (index - 1) * math.pi / 2 + math.pi / 4
+    graphics.arc("open", 0, 0, area.radius,
+      center - area.arc_span / 2, center + area.arc_span / 2,
+      outline, 2)
+  end
+  love.graphics.pop()
+end
+
 local function draw_seal_area_frame(x, y, size, color, fill_color)
   local half = size / 2
   local corner = size * 0.16
@@ -134,31 +174,6 @@ function HitParticle:draw()
   love.graphics.pop()
 end
 
-SlowParticle = Object:extend()
-SlowParticle:implement(GameObject)
-
-function SlowParticle:init(args)
-  self:init_game_object(args)
-  self.vx = self.vx or 0
-  self.vy = self.vy or 0
-  self.size = self.size or love.math.random(1, 2)
-  self.duration = self.duration or 0.28
-  self.time = 0
-end
-
-function SlowParticle:update(dt)
-  self.time = math.min(self.time + dt, self.duration)
-  self.x = self.x + self.vx * dt
-  self.y = self.y + self.vy * dt
-  if self.time == self.duration then self.dead = true end
-end
-
-function SlowParticle:draw()
-  local alpha = 1 - self.time / self.duration
-  graphics.rectangle(self.x, self.y, self.size, self.size,
-    nil, nil, graphics.color_with_alpha(self.color, alpha))
-end
-
 FrostCircleArea = Object:extend()
 FrostCircleArea:implement(GameObject)
 
@@ -167,18 +182,21 @@ function FrostCircleArea:init(args)
   self.radius = self.radius or 64
   self.duration = self.duration or 4.0
   self.damage = self.damage or 5
-  self.slow_multiplier = self.slow_multiplier or 0.4
+  self.slow_multiplier = self.slow_multiplier or 0.45
+  self.initial_slow_duration = self.initial_slow_duration or 1.6
+  self.persistent_slow = self.persistent_slow or false
   self.tick_interval = self.tick_interval or 0.1
-  self.slow_duration = self.tick_interval * 2
+  self.refresh_slow_duration = self.tick_interval * 2
   self.fill_alpha = self.fill_alpha or 0.06
-  self.fade_in_duration = 0.3
-  self.fade_out_duration = 0.5
+  self.fade_in_duration = 0.05
+  self.fade_out_duration = 0.1
   self.arc_span = math.pi / 5
   self.r = love.math.random() * 2 * math.pi
   self.rotation_speed = (love.math.random() - 0.5) * math.pi / 2
-  self.hit = {}
+  self.initial_applied = false
   self.time = 0
-  self.tick_time = 0
+  self.tick_time = self.tick_interval
+  init_area_pop(self)
 end
 
 function FrostCircleArea:contains(enemy)
@@ -186,43 +204,48 @@ function FrostCircleArea:contains(enemy)
   return dx * dx + dy * dy <= self.radius * self.radius
 end
 
-function FrostCircleArea:affect_enemies(enemies)
+function FrostCircleArea:apply_initial_effect(enemies)
   for _, enemy in ipairs(enemies or {}) do
     if not enemy.dead and self:contains(enemy) then
-      if not self.hit[enemy] then
-        enemy:hit(self.damage)
-        self.hit[enemy] = true
+      enemy:hit(self.damage)
+      if not enemy.dead then
+        enemy:apply_slow(self.slow_multiplier, self.initial_slow_duration)
       end
-      enemy:apply_slow(self.slow_multiplier, self.slow_duration)
+    end
+  end
+end
+
+function FrostCircleArea:maintain_slow(enemies)
+  for _, enemy in ipairs(enemies or {}) do
+    if not enemy.dead and self:contains(enemy) then
+      enemy:apply_slow(self.slow_multiplier, self.refresh_slow_duration)
     end
   end
 end
 
 function FrostCircleArea:update(dt, enemies)
   self.time = math.min(self.time + dt, self.duration)
-  self.tick_time = self.tick_time - dt
   self.r = self.r + self.rotation_speed * dt
+  update_area_pop(self, dt)
 
-  if self.tick_time <= 0 then
-    self.tick_time = self.tick_interval
-    self:affect_enemies(enemies)
+  if not self.initial_applied then
+    self:apply_initial_effect(enemies)
+    self.initial_applied = true
+  end
+
+  if self.persistent_slow and self.time < self.duration then
+    self.tick_time = self.tick_time - dt
+    while self.tick_time <= 0 do
+      self:maintain_slow(enemies)
+      self.tick_time = self.tick_time + self.tick_interval
+    end
   end
 
   if self.time == self.duration then self.dead = true end
 end
 
 function FrostCircleArea:draw()
-  local alpha = get_fade_alpha(self.time, self.duration,
-    self.fade_in_duration, self.fade_out_duration)
-  local outline = graphics.color_with_alpha(self.color, alpha)
-  graphics.circle(self.x, self.y, self.radius,
-    graphics.color_with_alpha(self.color, self.fill_alpha * alpha))
-  for index = 1, 4 do
-    local center = self.r + (index - 1) * math.pi / 2 + math.pi / 4
-    graphics.arc("open", self.x, self.y, self.radius,
-      center - self.arc_span / 2, center + self.arc_span / 2,
-      outline, 2)
-  end
+  draw_segmented_circle_area(self)
 end
 
 HitCircle = Object:extend()
@@ -309,58 +332,70 @@ function BlockBurstEffect:draw()
   love.graphics.pop()
 end
 
-BurningSquareArea = Object:extend()
-BurningSquareArea:implement(GameObject)
+CinderCircleArea = Object:extend()
+CinderCircleArea:implement(GameObject)
 
-function BurningSquareArea:init(args)
+function CinderCircleArea:init(args)
   self:init_game_object(args)
-  self.size = self.size or 72
-  self.duration = self.duration or 1.4
-  self.tick_interval = self.tick_interval or 0.25
-  self.damage = self.damage or 2
-  self.rotation = self.rotation or 0
-  self.fill_alpha = self.fill_alpha or 0.065
-  self.fade_in_duration = 0.3
-  self.fade_out_duration = 0.5
+  self.radius = self.radius or 48
+  self.duration = self.duration or 3.0
+  self.damage = self.damage or 10
+  self.burning = self.burning or false
+  self.burn_interval = self.burn_interval or 0.25
+  self.burn_damage = self.burn_damage or 2
+  self.fill_alpha = self.fill_alpha or 0.06
+  self.fade_in_duration = 0.05
+  self.fade_out_duration = 0.1
+  self.arc_span = math.pi / 5
+  self.r = love.math.random() * 2 * math.pi
+  self.rotation_speed = (love.math.random() - 0.5) * math.pi / 2
   self.time = 0
-  self.tick_time = 0
+  self.burn_time = self.burn_interval
+  self.hit_applied = false
+  init_area_pop(self)
 end
 
-function BurningSquareArea:update(dt, enemies)
+function CinderCircleArea:update(dt, enemies)
   self.time = math.min(self.time + dt, self.duration)
-  self.tick_time = self.tick_time - dt
+  self.r = self.r + self.rotation_speed * dt
+  update_area_pop(self, dt)
+  if not self.hit_applied then
+    self:hit_enemies(enemies)
+    self.hit_applied = true
+  end
 
-  if self.tick_time <= 0 then
-    self.tick_time = self.tick_interval
-    self:damage_enemies(enemies)
+  if self.burning and self.time < self.duration then
+    self.burn_time = self.burn_time - dt
+    while self.burn_time <= 0 do
+      self:burn_enemies(enemies)
+      self.burn_time = self.burn_time + self.burn_interval
+    end
   end
 
   if self.time == self.duration then self.dead = true end
 end
 
-function BurningSquareArea:contains(enemy)
+function CinderCircleArea:contains(enemy)
   local dx, dy = enemy.x - self.x, enemy.y - self.y
-  local c, s = math.cos(-self.rotation), math.sin(-self.rotation)
-  local local_x = dx * c - dy * s
-  local local_y = dx * s + dy * c
-  return math.abs(local_x) <= self.size / 2 and math.abs(local_y) <= self.size / 2
+  return dx * dx + dy * dy <= self.radius * self.radius
 end
 
-function BurningSquareArea:damage_enemies(enemies)
+function CinderCircleArea:hit_enemies(enemies)
   for _, enemy in ipairs(enemies or {}) do
-    if not enemy.dead and self:contains(enemy) then enemy:hit(self.damage) end
+    if not enemy.dead and self:contains(enemy) then
+      enemy:hit(self.damage)
+    end
   end
 end
 
-function BurningSquareArea:draw()
-  local alpha = get_fade_alpha(self.time, self.duration,
-    self.fade_in_duration, self.fade_out_duration)
-  local color = graphics.color_with_alpha(self.color, alpha)
-  local fill_color = graphics.color_with_alpha(self.color, self.fill_alpha * alpha)
+function CinderCircleArea:burn_enemies(enemies)
+  for _, enemy in ipairs(enemies or {}) do
+    if not enemy.dead and self:contains(enemy) then
+      enemy:hit(self.burn_damage)
+    end
+  end
+end
 
-  love.graphics.push("all")
-  love.graphics.translate(self.x, self.y)
-  love.graphics.rotate(self.rotation)
-  draw_seal_area_frame(0, 0, self.size, color, fill_color)
-  love.graphics.pop()
+function CinderCircleArea:draw()
+  draw_segmented_circle_area(self)
 end
