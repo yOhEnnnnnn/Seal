@@ -28,20 +28,9 @@ function Volley:perform_attack(player, target, enemies, projectiles, effects)
       speed = self.projectile_speed,
       damage = damage,
       color = self.color,
+      effects = effects,
       owner = self,
       bounces = bounces,
-      on_bounce = function(projectile)
-        effects[#effects + 1] = HitParticle{
-          x = projectile.x,
-          y = projectile.y,
-          r = projectile.r + math.pi,
-          speed = 35,
-          duration = 0.15,
-          width = 4,
-          height = 2,
-          color = self.color,
-        }
-      end,
     }
   end
   self:play_projectile_attack_sound()

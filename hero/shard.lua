@@ -26,7 +26,7 @@ function Shard:get_target_priority(enemy, enemies)
 end
 
 function Shard:scatter(source, enemy, projectiles, max_projectiles,
-    damage_multiplier, fragment_pierce)
+    effects, damage_multiplier, fragment_pierce)
   local rotation = love.math.random() * math.pi * 2
   for index = 1, self.fragment_count do
     if #projectiles >= max_projectiles then break end
@@ -39,6 +39,7 @@ function Shard:scatter(source, enemy, projectiles, max_projectiles,
       speed = self.fragment_speed,
       damage = self.fragment_damage * damage_multiplier,
       color = self.color,
+      effects = effects,
       pierce = fragment_pierce,
       lifetime = self.fragment_lifetime,
       hit_enemies = {[enemy] = true},
@@ -46,7 +47,7 @@ function Shard:scatter(source, enemy, projectiles, max_projectiles,
   end
 end
 
-function Shard:perform_attack(player, target, enemies, projectiles)
+function Shard:perform_attack(player, target, enemies, projectiles, effects)
   if #projectiles >= player.max_projectiles then return false end
 
   local damage_multiplier = self:get_level_damage_multiplier()
@@ -58,10 +59,11 @@ function Shard:perform_attack(player, target, enemies, projectiles)
     speed = self.projectile_speed,
     damage = self.projectile_damage * damage_multiplier,
     color = self.color,
+    effects = effects,
     owner = self,
     on_hit = function(source, enemy)
       self:scatter(source, enemy, projectiles, player.max_projectiles,
-        damage_multiplier, fragment_pierce)
+        effects, damage_multiplier, fragment_pierce)
     end,
   }
   self:play_projectile_attack_sound()

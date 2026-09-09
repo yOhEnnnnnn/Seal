@@ -68,6 +68,32 @@ function Enemy:is_slowed()
   return self.slow_time > 0
 end
 
+function Enemy:spawn_hit_particles(r, impact_color)
+  impact_color = impact_color or self.hit_color
+  for index = 1, 3 do
+    local width = 4.5 + love.math.random() * 2.5
+    self.effects[#self.effects + 1] = HitParticle{
+      x = self.x,
+      y = self.y,
+      r = r + (love.math.random() * 2 - 1) * math.pi / 2,
+      speed = 65 + love.math.random() * 70,
+      duration = 0.18 + love.math.random() * 0.18,
+      width = width,
+      height = width / 2,
+      color = index == 1 and impact_color or self.color,
+    }
+  end
+
+  self.effects[#self.effects + 1] = HitCircle{
+    x = self.x,
+    y = self.y,
+    radius = 7,
+    duration = 0.08,
+    color = self.hit_color,
+    target_color = impact_color,
+  }
+end
+
 function Enemy:hit(damage)
   if self.dead then return end
   self.hit_spring:pull(0.25, 200, 10)

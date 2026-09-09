@@ -91,6 +91,7 @@ function WispProjectile:check_hits(enemies)
       self:is_colliding_with_object(enemy) then
       enemy:hit(self.damage)
       self.hit_enemies[enemy] = true
+      enemy:spawn_hit_particles(self.r + math.pi, self.color)
 
       if enemy.dead and self:continue_after_kill(enemy, enemies) then return end
       self.dead = true

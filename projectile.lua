@@ -31,19 +31,55 @@ function Projectile:update(dt, enemies)
   if not self.dead then self:check_bounds() end
 end
 
+function Projectile:spawn_wall_impact_particles(hit_x, hit_y)
+  local r
+  if hit_x and hit_y then
+    r = self.r + math.pi
+  elseif hit_x then
+    r = self.x < gw / 2 and 0 or math.pi
+  else
+    r = self.y < gh / 2 and math.pi / 2 or -math.pi / 2
+  end
+  for _ = 1, 3 do
+    local width = 4.5 + love.math.random() * 2
+    self.effects[#self.effects + 1] = HitParticle{
+      x = self.x,
+      y = self.y,
+      r = r + (love.math.random() * 2 - 1) * math.pi / 2,
+      speed = 60 + love.math.random() * 60,
+      duration = 0.18 + love.math.random() * 0.12,
+      width = width,
+      height = width / 2,
+      color = self.color,
+    }
+  end
+
+
+  self.effects[#self.effects + 1] = HitCircle{
+    x = self.x,
+    y = self.y,
+    radius = 6,
+    duration = 0.08,
+    color = {1, 1, 1, 1},
+    target_color = self.color,
+  }
+end
+
 function Projectile:check_bounds()
+  local half_width = self.width / 2
+  local half_height = self.height / 2
+  local cosine = math.abs(math.cos(self.r))
+  local sine = math.abs(math.sin(self.r))
+  local extent_x = half_width * cosine + half_height * sine
+  local extent_y = half_width * sine + half_height * cosine
+  local hit_x = self.x - extent_x <= 0 or self.x + extent_x >= gw
+  local hit_y = self.y - extent_y <= 0 or self.y + extent_y >= gh
+
   if self.bounces ~= nil then
-    local half_width = self.width / 2
-    local half_height = self.height / 2
-    local cosine = math.abs(math.cos(self.r))
-    local sine = math.abs(math.sin(self.r))
-    local extent_x = half_width * cosine + half_height * sine
-    local extent_y = half_width * sine + half_height * cosine
-    local hit_x = self.x - extent_x <= 0 or self.x + extent_x >= gw
-    local hit_y = self.y - extent_y <= 0 or self.y + extent_y >= gh
     if not hit_x and not hit_y then return end
 
     if self.bounces <= 0 then
+      self:spawn_wall_impact_particles(hit_x, hit_y)
       self.dead = true
       return
     end
@@ -54,12 +90,11 @@ function Projectile:check_bounds()
     if hit_y then self.vy = -self.vy end
     self.r = math.atan2(self.vy, self.vx)
     self.bounces = self.bounces - 1
-    if self.on_bounce then self.on_bounce(self, hit_x, hit_y) end
     return
   end
 
-  if self.x < -self.width or self.x > gw + self.width or
-    self.y < -self.width or self.y > gh + self.width then
+  if hit_x or hit_y then
+    self:spawn_wall_impact_particles(hit_x, hit_y)
     self.dead = true
   end
 end
@@ -75,6 +110,7 @@ function Projectile:check_hits(enemies)
         enemy:apply_slow(self.slow_multiplier, self.slow_duration)
       end
       self.hit_enemies[enemy] = true
+      enemy:spawn_hit_particles(self.r + math.pi, self.color)
       if self.on_hit then self.on_hit(self, enemy, enemies) end
 
       if self.pierce <= 0 then

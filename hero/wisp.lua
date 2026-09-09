@@ -37,7 +37,7 @@ function Wisp:get_damage_decay()
   return 0.75
 end
 
-function Wisp:perform_attack(player, target, enemies, projectiles)
+function Wisp:perform_attack(player, target, enemies, projectiles, effects)
   if #projectiles >= player.max_projectiles then return false end
   if self:has_active_projectile(projectiles) then return false end
 
@@ -54,6 +54,7 @@ function Wisp:perform_attack(player, target, enemies, projectiles)
     remaining_chains = self:get_chain_count(),
     speed_growth = self:get_speed_growth(),
     color = self.color,
+    effects = effects,
   }
   return true
 end
