@@ -166,6 +166,8 @@ function love.load(args)
     Arc{color = colors.blue},
     Rime{color = colors.mint},
     Wisp{color = colors.lavender},
+    Shard{color = colors.pink},
+    Volley{color = colors.lime},
   }
   if cinder_test then
     heroes = {
