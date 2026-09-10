@@ -7,14 +7,15 @@ function Projectile:init(args)
   self:init_physics(args)
   self.speed = self.speed or 160
   self.damage = self.damage or 10
-  self.width = self.width or 8
-  self.height = self.height or 3.2
-  self.color = self.color or {1, 1, 1, 1}
+  self.radius = self.radius or 2.5
+  self.width = self.radius * 2
+  self.height = self.radius * 2
+  self.color = {1, 1, 1, 1}
   self.effects = self.effects or {}
   self.pierce = self.pierce or 0
   self.damage_decay = self.damage_decay or 1
   self.hit_enemies = self.hit_enemies or {}
-  self:set_as_rectangle(self.width, self.height, "dynamic", "projectile")
+  self:set_as_circle(self.radius, "dynamic", "projectile")
   self:set_velocity(self.speed * math.cos(self.r), self.speed * math.sin(self.r))
 end
 
@@ -66,12 +67,8 @@ function Projectile:spawn_wall_impact_particles(hit_x, hit_y)
 end
 
 function Projectile:check_bounds()
-  local half_width = self.width / 2
-  local half_height = self.height / 2
-  local cosine = math.abs(math.cos(self.r))
-  local sine = math.abs(math.sin(self.r))
-  local extent_x = half_width * cosine + half_height * sine
-  local extent_y = half_width * sine + half_height * cosine
+  local extent_x = self.radius
+  local extent_y = self.radius
   local hit_x = self.x - extent_x <= 0 or self.x + extent_x >= gw
   local hit_y = self.y - extent_y <= 0 or self.y + extent_y >= gh
 
@@ -126,11 +123,5 @@ function Projectile:check_hits(enemies)
 end
 
 function Projectile:draw()
-  love.graphics.push("all")
-  love.graphics.translate(self.x, self.y)
-  love.graphics.rotate(self.r)
-  graphics.rectangle(0, 0, self.width, self.height, 1.6, 1.6, self.color)
-  love.graphics.pop()
+  graphics.circle(self.x, self.y, self.radius, self.color)
 end
-
-require("projectile.wisp")

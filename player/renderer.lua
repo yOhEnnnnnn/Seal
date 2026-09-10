@@ -76,6 +76,7 @@ function Player:draw_dash_trail(size)
 end
 
 function Player:draw_aim_arrow()
+  if not self:get_active_hero() then return end
   if self.dashing then return end
   local scale = 1 - 0.35 * self.dash_cooldown_time / self.dash_cooldown
   local x = self.x + math.cos(self.aim_r) * self.arrow_distance

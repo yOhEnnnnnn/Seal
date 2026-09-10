@@ -53,10 +53,3 @@ end
 function Hero:perform_attack()
   return false
 end
-
-require("hero.cinder")
-require("hero.arc")
-require("hero.rime")
-require("hero.wisp")
-require("hero.shard")
-require("hero.volley")
