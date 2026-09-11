@@ -135,6 +135,7 @@ CoinPickupEffect:implement(GameObject)
 
 function CoinPickupEffect:init(args)
   self:init_game_object(args)
+  self.is_coin = true
   self.color = self.color or {250 / 255, 207 / 255, 0, 1}
   self.duration = self.duration or 0.32
   self.radius = self.radius or 2

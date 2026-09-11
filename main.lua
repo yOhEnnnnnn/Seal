@@ -5,6 +5,8 @@ require("engine.math.spring")
 require("engine.graphics.graphics")
 require("engine.graphics.canvas")
 require("engine.game.gameobject")
+levels = require("data.levels")
+require("game.game_rules")
 require("effect")
 require("engine.game.physics")
 require("engine.game.steering")
@@ -20,7 +22,7 @@ local enemies
 local effects
 local game_canvas
 local ui_font
-local score
+local rules
 local coins
 local spawn_timer
 local spawn_interval
@@ -58,12 +60,13 @@ local function spawn_enemy(side)
     hit_color = colors.foreground,
     hp_bar_background = colors.hp_bar_background,
     effects = effects,
-    score_value = 1,
     on_coin_collected = function(value) coins = coins + value end,
   }
 end
 
 local function update_enemy_spawning(dt)
+  if rules:is_level_complete() then return end
+
   spawn_timer = math.max(spawn_timer - dt, 0)
   if spawn_timer > 0 or #enemies >= max_enemies then return end
 
@@ -89,7 +92,7 @@ function love.load()
   projectiles = {}
   enemies = {}
   effects = {}
-  score = 0
+  rules = GameRules{levels = levels, level = 1}
   coins = 0
   spawn_timer = 0.9
   spawn_interval = 0.9
@@ -120,7 +123,7 @@ function love.update(dt)
     end
     if enemy.dead then
       if not enemy.reached_center then
-        score = score + (enemy.score_value or 1)
+        rules:enemy_killed()
       end
       table.remove(enemies, index)
     end
@@ -148,17 +151,32 @@ end
 local function draw_ui()
   graphics.set_color(colors.foreground)
   local line_height = ui_font:getHeight() + 2
-  love.graphics.print("SCORE: " .. score, 10, 9)
+  love.graphics.print(
+    "SCORE: " .. rules.score .. " / " .. rules:get_target_score(), 10, 9)
   love.graphics.print("COINS: " .. coins, 10, 9 + line_height)
   love.graphics.print("HERO: NONE", 10, 9 + line_height * 2)
+
+  if rules:is_level_complete() then
+    love.graphics.printf("LEVEL COMPLETE", 0, gh / 2 - 8, gw, "center")
+  end
+end
+
+local function draw_effects(coin_layer)
+  for _, effect in ipairs(effects) do
+    local is_coin = effect.is_coin == true
+    if is_coin == coin_layer then
+      effect:draw()
+    end
+  end
 end
 
 local function draw_game()
   draw_background()
+  draw_effects(true)
   for _, projectile in ipairs(projectiles) do projectile:draw() end
   for _, enemy in ipairs(enemies) do enemy:draw() end
   player:draw()
-  for _, effect in ipairs(effects) do effect:draw() end
+  draw_effects(false)
   draw_ui()
 end
 
