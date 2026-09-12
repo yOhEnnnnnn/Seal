@@ -21,10 +21,6 @@ function Enemy:init(args)
   self.invincible = self.invincible or false
   self.stationary = self.stationary or false
   self.enemy_type = self.enemy_type or "normal"
-  self.coin_drop_chance = self.coin_drop_chance or 0.20
-  self.coin_drop_min = self.coin_drop_min or 1
-  self.coin_drop_max = self.coin_drop_max or 2
-  self.coin_value = self.coin_value or 1
   self.slow_multiplier = 1
   self.slow_time = 0
   self.hit_spring = Spring(1)
@@ -107,20 +103,6 @@ function Enemy:hit(damage)
   Unit.hit(self, damage * 100 / (100 + self.def))
 end
 
-function Enemy:drop_coins()
-  if love.math.random() > self.coin_drop_chance then return end
-
-  local amount = love.math.random(self.coin_drop_min, self.coin_drop_max)
-  for _ = 1, amount do
-    self.effects[#self.effects + 1] = CoinParticle{
-      x = self.x,
-      y = self.y,
-      value = self.coin_value,
-      on_collect = self.on_coin_collected,
-    }
-  end
-end
-
 function Enemy:on_death()
   for _ = 1, love.math.random(4, 6) do
     self.effects[#self.effects + 1] = HitParticle{
@@ -137,8 +119,6 @@ function Enemy:on_death()
     color = self.hit_color,
     target_color = self.color,
   }
-
-  self:drop_coins()
 end
 
 function Enemy:get_color()

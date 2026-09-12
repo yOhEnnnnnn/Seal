@@ -75,24 +75,8 @@ function Player:draw_dash_trail(size)
   end
 end
 
-function Player:draw_aim_arrow()
-  if not self:get_active_hero() then return end
-  if self.dashing then return end
-  local scale = 1 - 0.35 * self.dash_cooldown_time / self.dash_cooldown
-  local x = self.x + math.cos(self.aim_r) * self.arrow_distance
-  local y = self.y + math.sin(self.aim_r) * self.arrow_distance
-
-  love.graphics.push("all")
-  love.graphics.translate(x, y)
-  love.graphics.rotate(self.aim_r)
-  love.graphics.scale(scale, scale)
-  graphics.polygon({4, 0, -3, -3, -1, 0, -3, 3}, self:get_color())
-  love.graphics.pop()
-end
-
 function Player:draw()
   local size = self:get_draw_size()
   self:draw_dash_trail(size)
   self:draw_core(size)
-  self:draw_aim_arrow()
 end

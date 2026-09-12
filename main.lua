@@ -23,7 +23,6 @@ local effects
 local game_canvas
 local ui_font
 local rules
-local coins
 local spawn_timer
 local spawn_interval
 local next_spawn_side
@@ -37,6 +36,33 @@ local colors = {
   foreground = {218 / 255, 218 / 255, 218 / 255, 1},
   red = {233 / 255, 29 / 255, 57 / 255, 1},
 }
+
+local ammo_button = {
+  x = gw - 52,
+  y = 8,
+  width = 42,
+  height = 20,
+}
+
+local function is_inside_ammo_button(x, y)
+  return x >= ammo_button.x and x <= ammo_button.x + ammo_button.width and
+    y >= ammo_button.y and y <= ammo_button.y + ammo_button.height
+end
+
+local function draw_coin_icon(x, y, alpha)
+  graphics.circle(
+    x, y, 3,
+    graphics.color_with_alpha({250 / 255, 207 / 255, 0, 1}, alpha))
+  graphics.circle(
+    x - 0.8, y - 0.8, 0.6,
+    graphics.color_with_alpha(colors.foreground, alpha * 0.8))
+end
+
+local function draw_bullet_icon(x, y, alpha)
+  graphics.circle(
+    x, y, 2.5,
+    graphics.color_with_alpha({1, 1, 1, 1}, alpha))
+end
 
 local function spawn_enemy(side)
   if #enemies >= max_enemies then return end
@@ -60,7 +86,6 @@ local function spawn_enemy(side)
     hit_color = colors.foreground,
     hp_bar_background = colors.hp_bar_background,
     effects = effects,
-    on_coin_collected = function(value) coins = coins + value end,
   }
 end
 
@@ -79,6 +104,7 @@ function love.load()
   love.graphics.setDefaultFilter("nearest", "nearest")
   love.graphics.setBackgroundColor(0, 0, 0, 1)
   love.graphics.setLineStyle("rough")
+  love.mouse.setVisible(false)
 
   ui_font = love.graphics.newFont("assets/fonts/BoiledPasta.ttf", 16)
   ui_font:setFilter("nearest", "nearest")
@@ -93,7 +119,6 @@ function love.load()
   enemies = {}
   effects = {}
   rules = GameRules{levels = levels, level = 1}
-  coins = 0
   spawn_timer = 0.9
   spawn_interval = 0.9
   next_spawn_side = 1
@@ -148,36 +173,81 @@ local function draw_background()
   graphics.polygon({x, y, 170, gh, 0, gh, 0, 212}, colors.background_light)
 end
 
+local function draw_aim_ray()
+  local mouse_x, mouse_y = game_canvas:to_canvas_position(
+    love.mouse.getPosition())
+  if not mouse_x then return end
+
+  local dx, dy = mouse_x - player.x, mouse_y - player.y
+  local length = math.sqrt(dx * dx + dy * dy)
+  if length < 0.001 then return end
+
+  dx, dy = dx / length, dy / length
+  local distance_x = dx > 0 and (gw - player.x) / dx or
+    (dx < 0 and -player.x / dx or math.huge)
+  local distance_y = dy > 0 and (gh - player.y) / dy or
+    (dy < 0 and -player.y / dy or math.huge)
+  local ray_length = math.min(distance_x, distance_y)
+  local color = graphics.color_with_alpha(colors.foreground, 0.4)
+  local dash_length, gap_length = 6, 5
+
+  for distance = player.size + 5, ray_length, dash_length + gap_length do
+    local dash_end = math.min(distance + dash_length, ray_length)
+    graphics.line(
+      player.x + dx * distance,
+      player.y + dy * distance,
+      player.x + dx * dash_end,
+      player.y + dy * dash_end,
+      color,
+      2)
+  end
+end
+
 local function draw_ui()
   graphics.set_color(colors.foreground)
   local line_height = ui_font:getHeight() + 2
   love.graphics.print(
     "SCORE: " .. rules.score .. " / " .. rules:get_target_score(), 10, 9)
-  love.graphics.print("COINS: " .. coins, 10, 9 + line_height)
-  love.graphics.print("HERO: NONE", 10, 9 + line_height * 2)
+  draw_bullet_icon(14, 17 + line_height, 1)
+  love.graphics.print(player.ammo, 23, 9 + line_height)
+  draw_coin_icon(14, 17 + line_height * 2, 1)
+  love.graphics.print(player.coins, 23, 9 + line_height * 2)
+  love.graphics.print("HERO: NONE", 10, 9 + line_height * 3)
+
+  local mouse_x, mouse_y = game_canvas:to_canvas_position(love.mouse.getPosition())
+  local enabled = player:can_buy_ammo() and not rules:is_level_complete()
+  local hovered = enabled and mouse_x and
+    is_inside_ammo_button(mouse_x, mouse_y)
+  local icon_alpha = enabled and (hovered and 1 or 0.75) or 0.35
+  local text_color = graphics.color_with_alpha(colors.foreground, icon_alpha)
+  local center_y = ammo_button.y + ammo_button.height / 2
+  draw_bullet_icon(ammo_button.x + 10, center_y, icon_alpha)
+  graphics.set_color(text_color)
+  love.graphics.print(
+    "/ " .. player.ammo_purchase_cost,
+    ammo_button.x + 17,
+    ammo_button.y + 1)
 
   if rules:is_level_complete() then
     love.graphics.printf("LEVEL COMPLETE", 0, gh / 2 - 8, gw, "center")
   end
 end
 
-local function draw_effects(coin_layer)
-  for _, effect in ipairs(effects) do
-    local is_coin = effect.is_coin == true
-    if is_coin == coin_layer then
-      effect:draw()
-    end
-  end
+local function draw_aim_dot()
+  local x, y = game_canvas:to_canvas_position(love.mouse.getPosition())
+  if not x then return end
+  graphics.circle(x, y, 1.5, colors.foreground)
 end
 
 local function draw_game()
   draw_background()
-  draw_effects(true)
+  draw_aim_ray()
   for _, projectile in ipairs(projectiles) do projectile:draw() end
   for _, enemy in ipairs(enemies) do enemy:draw() end
   player:draw()
-  draw_effects(false)
+  for _, effect in ipairs(effects) do effect:draw() end
   draw_ui()
+  draw_aim_dot()
 end
 
 function love.draw()
@@ -196,19 +266,13 @@ function love.mousepressed(x, y, button)
   local mouse_x, mouse_y = game_canvas:to_canvas_position(x, y)
   if not mouse_x then return end
 
-  for index = #effects, 1, -1 do
-    local effect = effects[index]
-    if effect.is_coin and effect:contains_point(mouse_x, mouse_y) then
-      local pickup_x, pickup_y = effect.x, effect.y
-      local pickup_color = effect.color
-      effect:collect()
-      table.remove(effects, index)
-      effects[#effects + 1] = CoinPickupEffect{
-        x = pickup_x,
-        y = pickup_y,
-        color = pickup_color,
-      }
-      break
-    end
+  if is_inside_ammo_button(mouse_x, mouse_y) then
+    if not rules:is_level_complete() then player:buy_ammo() end
+    return
+  end
+
+  if not rules:is_level_complete() then
+    player:try_attack(
+      mouse_x, mouse_y, enemies, projectiles, effects)
   end
 end

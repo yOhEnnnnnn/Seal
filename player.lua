@@ -16,14 +16,45 @@ function Player:init(args)
   self.color = self.color or {250 / 255, 207 / 255, 0, 1}
   self.shadow_color = self.shadow_color or {0, 0, 0, 0.35}
   self.max_projectiles = self.max_projectiles or 64
-  self.base_attack_range = self.base_attack_range or 160
-  self.base_attack_interval = self.base_attack_interval or 0.6
+  self.ammo = self.ammo or 30
+  self.coins = self.coins or 3
+  self.ammo_per_purchase = self.ammo_per_purchase or 10
+  self.ammo_purchase_cost = self.ammo_purchase_cost or 1
+  self.ammo_purchase_limit = self.ammo_purchase_limit or 3
+  self.ammo_purchases = 0
+  self.base_attack_interval = self.base_attack_interval or 0.10
   self.base_attack_cooldown_time = 0
   self.base_projectile_speed = self.base_projectile_speed or 160
   self.base_projectile_damage = self.base_projectile_damage or 10
   self:set_as_rectangle(self.size, self.size, "dynamic", "player")
   self:init_player_dash()
   self:init_player_heroes()
+end
+
+function Player:add_ammo(amount)
+  self.ammo = self.ammo + math.max(0, math.floor(amount or 0))
+end
+
+function Player:add_coins(amount)
+  self.coins = self.coins + math.max(0, math.floor(amount or 0))
+end
+
+function Player:get_ammo_purchases_remaining()
+  return math.max(self.ammo_purchase_limit - self.ammo_purchases, 0)
+end
+
+function Player:can_buy_ammo()
+  return self.ammo_purchases < self.ammo_purchase_limit and
+    self.coins >= self.ammo_purchase_cost
+end
+
+function Player:buy_ammo()
+  if not self:can_buy_ammo() then return false end
+
+  self.ammo_purchases = self.ammo_purchases + 1
+  self.coins = self.coins - self.ammo_purchase_cost
+  self:add_ammo(self.ammo_per_purchase)
+  return true
 end
 
 function Player:update(dt, enemies, projectiles, effects)
@@ -33,7 +64,6 @@ function Player:update(dt, enemies, projectiles, effects)
     self.base_attack_cooldown_time - dt, 0)
   self:update_switch(dt)
   self:update_heroes(dt)
-  self:update_attack(enemies, projectiles, effects)
 end
 
 function Player:keypressed(key, scancode)

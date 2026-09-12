@@ -43,9 +43,10 @@ function Hero:play_projectile_attack_sound()
   projectile_attack_sound:play()
 end
 
-function Hero:attack(player, target, enemies, projectiles, effects)
+function Hero:attack(player, aim_x, aim_y, enemies, projectiles, effects)
   if not self:can_attack() then return end
-  if not self:perform_attack(player, target, enemies, projectiles, effects) then return end
+  if not self:perform_attack(
+      player, aim_x, aim_y, enemies, projectiles, effects) then return end
   self.attack_cooldown_time = self:get_attack_interval()
   return true
 end

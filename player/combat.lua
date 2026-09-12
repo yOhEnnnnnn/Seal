@@ -1,32 +1,9 @@
-function Player:get_attack_target(enemies)
-  local hero = self:get_active_hero()
-  local attack_range = hero and hero.attack_range or self.base_attack_range
-
-  local target
-  local target_priority
-  local nearest_distance = attack_range * attack_range
-  for _, enemy in ipairs(enemies) do
-    if not enemy.dead then
-      local dx, dy = enemy.x - self.x, enemy.y - self.y
-      local distance = dx * dx + dy * dy
-      local priority = hero and hero:get_target_priority(enemy, enemies) or 0
-      if distance <= attack_range * attack_range and
-        (target_priority == nil or priority > target_priority or
-          priority == target_priority and distance <= nearest_distance) then
-        target = enemy
-        target_priority = priority
-        nearest_distance = distance
-      end
-    end
-  end
-  return target
-end
-
-function Player:perform_base_attack(target, projectiles, effects)
+function Player:perform_base_attack(aim_x, aim_y, projectiles, effects)
   if self.base_attack_cooldown_time > 0 then return end
   if #projectiles >= self.max_projectiles then return end
+  if (aim_x - self.x) ^ 2 + (aim_y - self.y) ^ 2 <= 1 then return end
 
-  local r = math.atan2(target.y - self.y, target.x - self.x)
+  local r = math.atan2(aim_y - self.y, aim_x - self.x)
   projectiles[#projectiles + 1] = Projectile{
     x = self.x,
     y = self.y,
@@ -45,16 +22,20 @@ function Player:perform_base_attack(target, projectiles, effects)
   return true
 end
 
-function Player:update_attack(enemies, projectiles, effects)
+function Player:try_attack(aim_x, aim_y, enemies, projectiles, effects)
+  if not aim_x or not aim_y then return end
+  if self.ammo <= 0 then return end
+
   local hero = self:get_active_hero()
   if hero and not hero:can_attack() then return end
 
-  local target = self:get_attack_target(enemies)
-  if not target then return end
-  self.aim_r = math.atan2(target.y - self.y, target.x - self.x)
+  self:set_aim_position(aim_x, aim_y)
+  local fired
   if hero then
-    hero:attack(self, target, enemies, projectiles, effects)
+    fired = hero:attack(self, aim_x, aim_y, enemies, projectiles, effects)
   else
-    self:perform_base_attack(target, projectiles, effects)
+    fired = self:perform_base_attack(aim_x, aim_y, projectiles, effects)
   end
+  if fired then self.ammo = self.ammo - 1 end
+  return fired
 end
