@@ -1,4 +1,4 @@
-local Collision = {}
+Collision = {}
 
 local function overlaps_axis(dx, dy, ax, ay, ac, as, aw, ah, bc, bs, bw, bh)
   local a_radius = aw * math.abs(ax * ac + ay * as) +
@@ -76,5 +76,3 @@ function Collision.sweep_circle(x, y, end_x, end_y, radius, object)
     segment_circle(x, y, dx, dy, -hw, hh, radius),
     segment_circle(x, y, dx, dy, hw, hh, radius))
 end
-
-return Collision

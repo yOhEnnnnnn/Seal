@@ -83,7 +83,7 @@ UI 层不应用摄像机变换，因此金币、分数、子弹背包和商店�
 
 ```text
 engine/graphics/camera.lua   摄像机、随机震屏和方向弹簧
-game/game.lua               更新摄像机并划分世界层与 UI 层
+game.lua / arena.lua        更新摄像机并划分世界层与 UI 层
 projectile.lua              在合适的子弹事件中请求反馈
 enemy.lua                   继续负责受击闪白、形变和粒子
 ```

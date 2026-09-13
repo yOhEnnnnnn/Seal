@@ -1,30 +1,21 @@
 Shop = Object:extend()
 
-function Shop:init(args)
-  self.player = args.player
-  self.rules = args.rules
-  self.ui_font = args.ui_font
-  self.item_font = args.item_font
-  self.colors = args.colors
-  self.on_next = args.on_next
-  self.next_button = {
-    x = gw - 58,
-    y = gh - 30,
-    width = 48,
-    height = 20,
-  }
+function Shop:init(game)
+  self.game = game
+  self.ui_font = game.ui_font
+  self.item_font = game.shop_item_font
+  self.colors = game.colors
+  self.next_button = {x = gw - 58, y = gh - 30, width = 48, height = 20}
   self.bullets = {
-    self:create_bullet_item("pierce", 60),
-    self:create_bullet_item("bounce", 140),
-    self:create_bullet_item("chain", 220),
+    self:create_bullet_item("pierce"),
+    self:create_bullet_item("bounce"),
+    self:create_bullet_item("chain"),
   }
   self.marks = {
     {
       kind = "mark",
       key = "haste",
       name = "HASTE",
-      x = 60,
-      y = 211,
       price = 4,
       amount = 1,
       effect = "SPEED X1.5",
@@ -35,8 +26,6 @@ function Shop:init(args)
       kind = "mark",
       key = "armor",
       name = "ARMOR",
-      x = 140,
-      y = 211,
       price = 4,
       amount = 1,
       effect = "HP +1",
@@ -47,8 +36,6 @@ function Shop:init(args)
       kind = "mark",
       key = "fission",
       name = "FISSION",
-      x = 220,
-      y = 211,
       price = 6,
       amount = 1,
       effect = "SPLIT X2",
@@ -56,21 +43,65 @@ function Shop:init(args)
       color = {179 / 255, 136 / 255, 1, 1},
     },
   }
+  self.rows = {self.bullets, self.marks}
+  self.entries = {}
+  for row_index, items in ipairs(self.rows) do
+    local row = {}
+    for index, item in ipairs(items) do
+      row[index] = {item = item, x = 60 + (index - 1) * 80,
+        y = row_index == 1 and 94 or 211}
+    end
+    self.entries[row_index] = row
+  end
+  self.items = {}
+  for _, row in ipairs(self.rows) do
+    for _, item in ipairs(row) do self.items[item] = true end
+  end
 end
 
-function Shop:create_bullet_item(key, x)
+function Shop:create_bullet_item(key)
   local bullet = Bullets[key]
   return {
     kind = "bullet",
     key = key,
     name = bullet.name,
-    x = x,
-    y = 94,
     price = bullet.shop_price,
     amount = bullet.shop_amount,
     multiplier = bullet.multiplier,
     color = bullet.color,
   }
+end
+
+function Shop:reset()
+  for item in pairs(self.items) do item.sold = false end
+  for _, row in ipairs(self.entries) do
+    for _, entry in ipairs(row) do
+      entry.hovered = false
+      entry.hover_started_at = nil
+    end
+  end
+  self.next_button.hovered = false
+  self.next_button.hover_started_at = nil
+end
+
+function Shop:can_buy(item)
+  return self.items[item] == true and not item.sold and
+    self.game:is_shop_open() and self.game:has_next_level() and
+    self.game.coins >= item.price
+end
+
+function Shop:buy(item)
+  if not self:can_buy(item) then return false end
+  if item.kind == "bullet" then
+    if not self.game.inventory:add(item.key, item.amount) then return false end
+  elseif item.kind == "mark" and self.game.enemy_traits[item.key] ~= nil then
+    self.game.enemy_traits[item.key] = self.game.enemy_traits[item.key] + item.amount
+  else
+    return false
+  end
+  self.game.coins = self.game.coins - item.price
+  item.sold = true
+  return true
 end
 
 function Shop:is_inside(rect, x, y)
@@ -81,33 +112,6 @@ end
 function Shop:is_inside_item(item, x, y)
   return x >= item.x - 40 and x <= item.x + 40 and
     y >= item.y - 45 and y <= item.y + 45
-end
-
-function Shop:reset()
-  for _, row in ipairs({self.bullets, self.marks}) do
-    for _, item in ipairs(row) do
-      item.sold = false
-      item.hovered = false
-    end
-  end
-  self.next_button.hovered = false
-end
-
-function Shop:buy(item)
-  if item.kind == "bullet" then
-    return self.player:buy_bullets(item.key, item.amount, item.price)
-  end
-  return self.player:buy_enemy_trait(item.key, item.amount, item.price)
-end
-
-function Shop:draw_icon(x, y, color, alpha)
-  graphics.rectangle(
-    x + 1, y + 1, 14, 14, 3, 3,
-    graphics.color_with_alpha(
-      self.colors.hp_bar_background, alpha * 0.65))
-  graphics.rectangle(
-    x, y, 14, 14, 3, 3,
-    graphics.color_with_alpha(color, alpha))
 end
 
 function Shop:hover_values(target, hovered)
@@ -122,16 +126,17 @@ function Shop:hover_values(target, hovered)
     math.sin(elapsed * math.pi / 0.7)
 end
 
-function Shop:draw_item(item, mouse_x, mouse_y, shop_open)
+function Shop:draw_item(entry, mouse_x, mouse_y)
+  local item = entry.item
   if item.sold then return false end
 
-  local can_buy = shop_open and self.player.coins >= item.price
-  local hovered = mouse_x and self:is_inside_item(item, mouse_x, mouse_y)
-  local pop, pulse = self:hover_values(item, hovered)
+  local can_buy = self:can_buy(item)
+  local hovered = mouse_x and self:is_inside_item(entry, mouse_x, mouse_y)
+  local pop, pulse = self:hover_values(entry, hovered)
   local alpha = can_buy and (hovered and 1 or 0.78) or 0.3
 
   love.graphics.push("all")
-  love.graphics.translate(item.x, item.y)
+  love.graphics.translate(entry.x, entry.y)
   love.graphics.rotate(pulse * math.pi / 32)
   love.graphics.scale(1 + 0.03 * pulse + pop)
   if hovered then
@@ -143,10 +148,10 @@ function Shop:draw_item(item, mouse_x, mouse_y, shop_open)
   love.graphics.pop()
 
   love.graphics.push("all")
-  love.graphics.translate(item.x, item.y - 26)
+  love.graphics.translate(entry.x, entry.y - 26)
   love.graphics.scale(1 + pop, 1 + pop)
   love.graphics.setFont(self.item_font)
-  self:draw_icon(0, 0, item.color, alpha)
+  self.game.hud:draw_icon(0, 0, item.color, alpha)
   graphics.set_color(
     graphics.color_with_alpha(self.colors.background_dark, alpha))
   love.graphics.printf(
@@ -162,7 +167,7 @@ function Shop:draw_item(item, mouse_x, mouse_y, shop_open)
   graphics.set_color(graphics.color_with_alpha(item.color, alpha))
   love.graphics.printf(string.lower(item.name), -40, 10, 80, "center")
   if item.kind == "mark" then
-    local level_text = tostring(self.player.enemy_traits[item.key])
+    local level_text = tostring(self.game.enemy_traits[item.key])
     graphics.set_color(
       graphics.color_with_alpha(
         self.colors.hp_bar_background, alpha * 0.75))
@@ -197,7 +202,7 @@ function Shop:draw_details(item)
 end
 
 function Shop:draw_next(mouse_x, mouse_y)
-  if not self.rules:has_next_level() then
+  if not self.game:has_next_level() then
     graphics.set_color(self.colors.foreground)
     love.graphics.printf(
       "RUN COMPLETE - R TO RESTART", 0, self.next_button.y + 3, gw, "center")
@@ -229,7 +234,6 @@ function Shop:draw_next(mouse_x, mouse_y)
 end
 
 function Shop:draw(mouse_x, mouse_y)
-  local shop_open = self.rules:has_next_level()
   local title = "SHOP"
   local title_x = 10
   local title_time = love.timer.getTime() * 3
@@ -245,22 +249,22 @@ function Shop:draw(mouse_x, mouse_y)
   love.graphics.print(" - GOLD:", title_x, 9)
   title_x = title_x + self.ui_font:getWidth(" - GOLD: ")
   graphics.set_color(self.colors.gold)
-  love.graphics.print(self.player.coins, title_x, 9)
+  love.graphics.print(self.game.coins, title_x, 9)
 
   graphics.set_color(self.colors.foreground)
   love.graphics.print("SEAL", 10, 31)
   local hovered_item
-  for _, item in ipairs(self.bullets) do
-    if self:draw_item(item, mouse_x, mouse_y, shop_open) then
-      hovered_item = item
+  for _, entry in ipairs(self.entries[1]) do
+    if self:draw_item(entry, mouse_x, mouse_y) then
+      hovered_item = entry.item
     end
   end
 
   graphics.set_color(self.colors.foreground)
   love.graphics.print("MARK", 10, 148)
-  for _, item in ipairs(self.marks) do
-    if self:draw_item(item, mouse_x, mouse_y, shop_open) then
-      hovered_item = item
+  for _, entry in ipairs(self.entries[2]) do
+    if self:draw_item(entry, mouse_x, mouse_y) then
+      hovered_item = entry.item
     end
   end
   self:draw_details(hovered_item)
@@ -268,18 +272,15 @@ function Shop:draw(mouse_x, mouse_y)
 end
 
 function Shop:mousepressed(x, y)
-  for _, row in ipairs({self.bullets, self.marks}) do
-    for _, item in ipairs(row) do
-      if not item.sold and self:is_inside_item(item, x, y) and
-        self.rules:has_next_level() and self:buy(item) then
-        item.sold = true
+  for _, row in ipairs(self.entries) do
+    for _, entry in ipairs(row) do
+      if self:is_inside_item(entry, x, y) and self:buy(entry.item) then
         return true
       end
     end
   end
-
   if self:is_inside(self.next_button, x, y) then
-    self.on_next()
+    self.game:start_next_level()
     return true
   end
   return false

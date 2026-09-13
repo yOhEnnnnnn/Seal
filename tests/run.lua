@@ -5,6 +5,8 @@ local font_loads = 0
 local font = {setFilter = noop, getWidth = function(_, s) return #s * 8 end,
   getHeight = function() return 16 end}
 local source = {setVolume = noop, stop = noop, setPitch = noop, play = noop}
+local draw_text, stack_depth = {}, 0
+local function record_text(value) draw_text[#draw_text + 1] = tostring(value) end
 love = {
   graphics = {
     setDefaultFilter = noop, setBackgroundColor = noop, setLineStyle = noop,
@@ -12,14 +14,19 @@ love = {
     newFont = function() font_loads = font_loads + 1; return font end,
     newCanvas = function() return {setFilter = noop} end,
     getDimensions = function() return 960, 540 end,
+    push = function() stack_depth = stack_depth + 1 end,
+    pop = function() stack_depth = stack_depth - 1; assert(stack_depth >= 0) end,
+    setColor = noop, setLineWidth = noop, translate = noop, rotate = noop,
+    scale = noop, rectangle = noop, circle = noop, line = noop, polygon = noop,
+    print = record_text, printf = record_text,
   },
   mouse = {setVisible = noop, getPosition = function() return 600, 270 end},
   audio = {newSource = function() return source end},
   math = {random = math.random},
   event = {quit = noop},
+  timer = {getTime = function() return 1 end},
 }
 require("main")
-local Collision = require("engine.game.collision")
 local passed = 0
 local function test(name, action)
   action()
@@ -35,7 +42,7 @@ end
 
 test("rotated rectangle contact follows its long axis", function()
   local target = enemy(100, 100, math.pi / 2)
-  local player = Player{x = 100, y = 109}
+  local player = Player{x = 100, y = 109, inventory = Inventory()}
   assert(target:is_colliding_with_object(player))
   player.x, player.y = 109, 100
   assert(not target:is_colliding_with_object(player))
@@ -124,17 +131,19 @@ test("wall stops hits beyond the arena and handles long frames", function()
   near(bounce.x, bounce.radius)
 end)
 
-test("ammo totals come exclusively from inventory", function()
-  local player = Player{coins = 10, bullets = {normal = 0, pierce = 2,
-    bounce = 0, chain = 0}}
-  assert(player:get_ammo_count() == 2)
-  assert(player:ensure_current_bullet() == "pierce")
+test("ammo totals come exclusively from shared inventory", function()
+  local run = Game()
+  run.inventory = Inventory{normal = 0, pierce = 2}
+  local player = Player{inventory = run.inventory}
+  local shop = run.shop
+  assert(run.inventory:get_count() == 2)
+  assert(run.inventory:ensure_current() == "pierce")
   assert(player:try_attack(100, 0, Group(), Group()))
-  assert(player:get_ammo_count() == 1)
-  assert(player:buy_bullets("bounce", 5, 5))
-  assert(player:get_ammo_count() == 6 and player.coins == 5)
-  assert(not player:buy_bullets("chain", 3, 7))
-  assert(player:get_ammo_count() == 6)
+  assert(run.inventory:get_count() == 1)
+  assert(shop:buy(shop.bullets[2]))
+  assert(run.inventory:get_count() == 6 and run.coins == 5)
+  assert(not shop:buy(shop.bullets[3]))
+  assert(run.inventory:get_count() == 6)
 end)
 
 test("compaction preserves survivors and removes each death once", function()
@@ -151,16 +160,16 @@ end)
 
 test("opening shop starts at level one and later shops advance", function()
   local game = Game()
-  assert(game.rules:is_shop_open())
+  assert(game:is_shop_open())
   game:start_next_level()
-  assert(game.rules.level == 1 and game.rules.state == "playing")
-  for _ = 1, 10 do game.rules:enemy_killed() end
+  assert(game.level == 1 and game.state == "playing")
+  for _ = 1, 10 do game:enemy_killed() end
   game:start_next_level()
-  assert(game.rules.level == 2 and game.rules.state == "playing")
+  assert(game.level == 2 and game.state == "playing")
 end)
 
 local function empty_ammo(game)
-  for key in pairs(game.player.bullets) do game.player.bullets[key] = 0 end
+  for key in pairs(game.inventory.counts) do game.inventory.counts[key] = 0 end
 end
 
 test("empty ammo fails and R resets without reloading assets", function()
@@ -168,37 +177,37 @@ test("empty ammo fails and R resets without reloading assets", function()
   game:start_next_level()
   empty_ammo(game)
   game:update(0.01)
-  assert(game.rules.state == "failed" and #game.enemies == 0)
+  assert(game.state == "failed" and #game.arena.enemies == 0)
   local loads = font_loads
   game:keypressed("r")
-  assert(game.rules:is_shop_open() and game.player:get_ammo_count() == 30)
-  assert(game.player.coins == 10 and font_loads == loads)
+  assert(game:is_shop_open() and game.inventory:get_count() == 30)
+  assert(game.coins == 10 and font_loads == loads)
 end)
 
 test("failure waits for the last projectile", function()
   local game = Game()
   game:start_next_level()
   empty_ammo(game)
-  game.projectiles:add(Projectile{x = 240, y = 135})
+  game.arena.projectiles:add(Projectile{x = 240, y = 135})
   game:update(0.01)
-  assert(game.rules.state == "playing")
+  assert(game.state == "playing")
   game:update(2)
-  assert(game.rules.state == "failed")
+  assert(game.state == "failed")
 end)
 
 test("last projectile winning kill settles before failure", function()
   local game = Game()
   game:start_next_level()
   empty_ammo(game)
-  game.enemies:clear()
-  game.rules.score = 9
+  game.arena.enemies:clear()
+  game.score = 9
   local target = enemy(100, 100)
   target.hp = 4.5
-  game.enemies:add(target)
-  game.projectiles:add(Projectile{x = 100, y = 100})
+  game.arena.enemies:add(target)
+  game.arena.projectiles:add(Projectile{x = 100, y = 100})
   game:update(0.01)
-  assert(game.rules:is_level_complete() and game.rules.score == 10)
-  assert(game.player.coins == 11 and #game.projectiles == 0)
+  assert(game:is_level_complete() and game.score == 10)
+  assert(game.coins == 11 and #game.arena.projectiles == 0)
 end)
 
 test("dead enemies do not contribute separation forces", function()
@@ -207,6 +216,138 @@ test("dead enemies do not contribute separation forces", function()
     {x = 1000, y = 1000}})
   near(target.separation_fx, 0)
   near(target.separation_fy, 0)
+end)
+
+test("shop enforces purchases without UI or platform APIs", function()
+  local platform = love
+  local run = Game()
+  local shop = run.shop
+  love = nil
+  local offer = shop.bullets[1]
+  assert(not shop:buy({kind = "bullet", key = "normal", price = 0, amount = 99}))
+  assert(not shop:buy(nil))
+  assert(shop:buy(offer) and offer.sold)
+  assert(run.coins == 5 and run.inventory.counts.pierce == 6)
+  assert(not shop:buy(offer))
+  assert(shop:buy(shop.marks[1]))
+  assert(run.coins == 1 and run.enemy_traits.haste == 1)
+  assert(not shop:buy(shop.marks[2]))
+  assert(not shop.marks[2].sold and run.enemy_traits.armor == 0)
+  run:add_coins(100)
+  run.state = "playing"
+  assert(not shop:buy(shop.bullets[2]))
+  run.state, run.level = "level_complete", #levels
+  assert(not shop:buy(shop.bullets[2]))
+  love = platform
+end)
+
+test("inventory switching and rejected attacks preserve ammunition", function()
+  local inventory = Inventory{normal = 1, bounce = 1}
+  local player = Player{inventory = inventory}
+  local projectiles = Group()
+  assert(not player:try_attack(0, 0, projectiles, Group()))
+  assert(inventory:get_count() == 2)
+  assert(player:try_attack(100, 0, projectiles, Group()))
+  assert(inventory:get_current() == "bounce" and inventory:get_count() == 1)
+  assert(not player:try_attack(100, 0, projectiles, Group()))
+  assert(inventory:get_count() == 1)
+  player:update(1)
+  assert(player:try_attack(100, 0, projectiles, Group()))
+  assert(inventory:get_count() == 0 and not inventory:consume())
+  assert(inventory:add("chain", 2) and inventory:get_current() == "chain")
+  assert(not inventory:add("unknown", 4))
+  assert(not inventory:add("normal", -1))
+end)
+
+test("screen input routes purchases and NEXT without firing", function()
+  local game = Game()
+  game:mousepressed(120, 188, 1)
+  assert(game.coins == 5 and game.inventory.counts.pierce == 6)
+  assert(game.shop.bullets[1].sold and #game.arena.projectiles == 0)
+  game:mousepressed(120, 188, 1)
+  assert(game.coins == 5)
+  game:mousepressed(870, 500, 1)
+  assert(game.state == "playing" and game.level == 1)
+  assert(#game.arena.projectiles == 0)
+  game:keypressed("q")
+  assert(game.inventory:get_current() == "pierce")
+  game:mousepressed(600, 270, 1)
+  assert(#game.arena.projectiles == 1 and game.inventory.counts.pierce == 5)
+end)
+
+test("hover and drawing leave catalog and run state unchanged", function()
+  local game = Game()
+  local item = game.shop.bullets[1]
+  game.shop:draw(60, 94)
+  assert(game.shop.entries[1][1].hovered)
+  assert(item.hovered == nil and item.hover_started_at == nil and item.x == nil)
+  assert(game.coins == 10 and game.inventory:get_count() == 30)
+  assert(not item.sold)
+  game.shop:draw(nil, nil)
+  assert(not game.shop.entries[1][1].hovered)
+  game.hud:draw(426, 40)
+  assert(game.inventory:get_current() == "normal")
+  assert(stack_depth == 0)
+end)
+
+test("all scene states draw through the extracted views", function()
+  local game = Game()
+  game:draw_scene()
+  game:start_next_level()
+  game:draw_scene()
+  game:fail()
+  draw_text = {}
+  game:draw_scene()
+  assert(table.concat(draw_text, "|"):find("OUT OF AMMO", 1, true))
+  game.state, game.level = "level_complete", #levels
+  draw_text = {}
+  game:draw_scene()
+  assert(table.concat(draw_text, "|"):find("RUN COMPLETE", 1, true))
+  assert(stack_depth == 0)
+end)
+
+test("restart refreshes inventory arena and shop without stale offers", function()
+  local game = Game()
+  local old_inventory, old_offer = game.inventory, game.shop.bullets[1]
+  game.shop:buy(old_offer)
+  game:start_next_level()
+  local old_arena = game.arena
+  game:fail()
+  game:keypressed("r")
+  assert(game.inventory ~= old_inventory and game.coins == 10)
+  assert(game.arena ~= old_arena and game.arena.player.inventory == game.inventory)
+  assert(game.shop.game == game and game.hud.game == game)
+  assert(not game.shop:buy(old_offer))
+  game.shop:mousepressed(60, 94)
+  assert(game.inventory.counts.pierce == 6 and game.coins == 5)
+  assert(old_inventory.counts.pierce == 6)
+end)
+
+test("player has collision but no enemy steering or health behavior", function()
+  local game = Game()
+  assert(game.arena.player.is_colliding_with_object)
+  assert(game.arena.player.seek_point == nil and game.arena.player.hit == nil)
+  local target = Enemy{x = 100, y = 100}
+  target:update(0.01, game.arena.player, {target})
+  assert(target.seek_point and target.hit)
+end)
+
+test("level transition replaces battle objects but retains run resources", function()
+  local game = Game()
+  game.shop:buy(game.shop.bullets[1])
+  game.shop:draw(140, 94)
+  game:start_next_level()
+  local inventory, arena = game.inventory, game.arena
+  for _ = 1, 10 do game:enemy_killed() end
+  local coins = game.coins
+  assert(game:start_next_level())
+  assert(game.level == 2 and game.score == 0)
+  assert(game.arena ~= arena and #game.arena.enemies == 4)
+  assert(game.inventory == inventory and game.arena.player.inventory == inventory)
+  assert(game.coins == coins and inventory.counts.pierce == 6)
+  assert(not game.shop.entries[1][2].hovered)
+  local active_arena = game.arena
+  assert(not game:start_next_level() and game.arena == active_arena)
 end)
 
 print(passed .. " tests passed")

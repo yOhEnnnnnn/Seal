@@ -21,24 +21,3 @@ function GameObject:init_game_object(args)
 
   return self
 end
-
-function GameObject:update_game_object(dt)
-  if self.update_physics then
-    self:update_physics(dt)
-  end
-
-  return self
-end
-
-function GameObject:draw_game_object()
-  if self.draw_physics then
-    self:draw_physics()
-  end
-
-  return self
-end
-
-function GameObject:mark_dead()
-  self.dead = true
-  return self
-end

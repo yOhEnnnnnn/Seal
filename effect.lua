@@ -61,25 +61,3 @@ end
 function HitCircle:draw()
   graphics.circle(self.x, self.y, self.radius, self.color)
 end
-
-AreaPulse = Object:extend()
-AreaPulse:implement(GameObject)
-
-function AreaPulse:init(args)
-  self:init_game_object(args)
-  self.radius = self.radius or 48
-  self.duration = self.duration or 0.2
-  self.line_width = self.line_width or 2
-  self.time = 0
-end
-
-function AreaPulse:update(dt)
-  self.time = math.min(self.time + dt, self.duration)
-  if self.time == self.duration then self.dead = true end
-end
-
-function AreaPulse:draw()
-  local progress = cubic_in_out(self.time / self.duration)
-  graphics.circle(self.x, self.y, self.radius * progress,
-    graphics.color_with_alpha(self.color, 1 - progress), self.line_width)
-end

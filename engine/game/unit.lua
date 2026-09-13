@@ -11,11 +11,6 @@ function Unit:hit(damage)
   if self.hp == 0 then self:die() end
 end
 
-function Unit:heal(amount)
-  if self.dead then return end
-  self.hp = math.min(self.hp + amount, self.max_hp)
-end
-
 function Unit:die()
   if self.dead then return end
   self.dead = true

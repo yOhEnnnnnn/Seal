@@ -1,5 +1,3 @@
-local Collision = require("engine.game.collision")
-
 Projectile = Object:extend()
 Projectile:implement(GameObject)
 Projectile:implement(Physics)
@@ -106,9 +104,6 @@ function Projectile:check_hits(enemies, end_x, end_y)
     self.x = start_x + (end_x - start_x) * hit_t
     self.y = start_y + (end_y - start_y) * hit_t
     nearest:hit(self.damage)
-    if self.slow_multiplier then
-      nearest:apply_slow(self.slow_multiplier, self.slow_duration)
-    end
     self.hit_enemies[nearest] = true
     nearest:spawn_hit_particles(self.r + math.pi, self.color)
     if self.on_hit then self.on_hit(self, nearest, enemies) end

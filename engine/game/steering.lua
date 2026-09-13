@@ -1,4 +1,6 @@
-function Physics:set_as_steerable(max_v, max_f, max_turn_rate, turn_multiplier)
+Steering = Object:extend()
+
+function Steering:set_as_steerable(max_v, max_f, max_turn_rate, turn_multiplier)
   self.max_v = max_v or 100
   self.max_f = max_f or 2000
   self.max_turn_rate = max_turn_rate or 2 * math.pi
@@ -15,7 +17,7 @@ function Physics:set_as_steerable(max_v, max_f, max_turn_rate, turn_multiplier)
   self.wander_y = 40 * math.sin(self.wander_r)
 end
 
-function Physics:seek_point(x, y, deceleration, weight)
+function Steering:seek_point(x, y, deceleration, weight)
   local tx, ty = x - self.x, y - self.y
   local distance = math.sqrt(tx * tx + ty * ty)
 
@@ -29,7 +31,7 @@ function Physics:seek_point(x, y, deceleration, weight)
   self.seek_fy = (speed * ty / distance - self.vy) * self.turn_multiplier * (weight or 1)
 end
 
-function Physics:wander(radius, distance, jitter, dt, weight)
+function Steering:wander(radius, distance, jitter, dt, weight)
   local jitter_amount = (jitter or 20) * dt * 60
   self.wander_x = self.wander_x + (love.math.random() * 2 - 1) * jitter_amount
   self.wander_y = self.wander_y + (love.math.random() * 2 - 1) * jitter_amount
@@ -46,7 +48,7 @@ function Physics:wander(radius, distance, jitter, dt, weight)
   self.wander_fy = (self.heading_y * target_x + self.side_y * target_y) * (weight or 1)
 end
 
-function Physics:steering_separate(radius, objects, weight)
+function Steering:steering_separate(radius, objects, weight)
   self.separation_fx, self.separation_fy = 0, 0
 
   for _, object in ipairs(objects or {}) do
@@ -63,7 +65,7 @@ function Physics:steering_separate(radius, objects, weight)
   end
 end
 
-function Physics:update_steering(dt)
+function Steering:update_steering(dt)
   local fx = self.seek_fx + self.wander_fx + self.separation_fx
   local fy = self.seek_fy + self.wander_fy + self.separation_fy
   local force = math.sqrt(fx * fx + fy * fy)
@@ -84,7 +86,7 @@ function Physics:update_steering(dt)
   end
 end
 
-function Physics:rotate_towards_velocity(dt)
+function Steering:rotate_towards_velocity(dt)
   if self.vx == 0 and self.vy == 0 then return end
 
   local target = math.atan2(self.vy, self.vx)

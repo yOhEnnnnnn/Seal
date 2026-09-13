@@ -1,5 +1,4 @@
 Physics = Object:extend()
-local Collision = require("engine.game.collision")
 
 local function get_shape(object)
   if object.shape then
@@ -93,56 +92,14 @@ function Physics:set_as_rectangle(width, height, body_type, tag)
   return self
 end
 
-function Physics:set_position(x, y)
-  self.x = x
-  self.y = y
-  return self
-end
-
-function Physics:get_position()
-  return self.x, self.y
-end
-
 function Physics:set_velocity(vx, vy)
   self.vx = vx
   self.vy = vy
   return self
 end
 
-function Physics:get_velocity()
-  return self.vx, self.vy
-end
-
 function Physics:stop()
   return self:set_velocity(0, 0)
-end
-
-function Physics:keep_inside(x1, y1, x2, y2)
-  local shape_type, a, b = get_shape(self)
-  local half_width = shape_type == "circle" and a or (a or 0) / 2
-  local half_height = shape_type == "circle" and a or (b or 0) / 2
-
-  self.x = math.max(x1 + half_width, math.min(x2 - half_width, self.x))
-  self.y = math.max(y1 + half_height, math.min(y2 - half_height, self.y))
-  return self
-end
-
-function Physics:distance_to_point(x, y)
-  local dx = x - self.x
-  local dy = y - self.y
-  return math.sqrt(dx * dx + dy * dy)
-end
-
-function Physics:distance_to_object(object)
-  return self:distance_to_point(object.x, object.y)
-end
-
-function Physics:angle_to_point(x, y)
-  return math.atan2(y - self.y, x - self.x)
-end
-
-function Physics:angle_to_object(object)
-  return self:angle_to_point(object.x, object.y)
 end
 
 function Physics:is_colliding_with_object(object)
@@ -163,24 +120,4 @@ function Physics:is_colliding_with_object(object)
   end
 
   return false
-end
-
-function Physics:draw_physics()
-  if not self.shape then
-    return self
-  end
-
-  if self.shape.type == "circle" then
-    love.graphics.circle("line", self.x, self.y, self.shape.radius)
-  elseif self.shape.type == "rectangle" then
-    love.graphics.rectangle(
-      "line",
-      self.x - self.shape.width / 2,
-      self.y - self.shape.height / 2,
-      self.shape.width,
-      self.shape.height
-    )
-  end
-
-  return self
 end
