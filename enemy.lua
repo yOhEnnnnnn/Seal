@@ -17,7 +17,7 @@ function Enemy:init(args)
   self.color = self.color or {233 / 255, 29 / 255, 57 / 255, 1}
   self.hit_color = self.hit_color or {1, 1, 1, 1}
   self.hp_bar_background = self.hp_bar_background or {32 / 255, 32 / 255, 32 / 255, 1}
-  self.effects = self.effects or {}
+  self.effects = self.effects or Group()
   self.invincible = self.invincible or false
   self.stationary = self.stationary or false
   self.enemy_type = self.enemy_type or "normal"
@@ -41,13 +41,17 @@ function Enemy:update(dt, player, enemies)
   self:update_statuses(dt)
   if self.stationary then
     self:stop()
-    return
+  else
+    self:seek_point(player.x, player.y)
+    self:wander(50, 100, 20, dt)
+    self:steering_separate(16, enemies)
+    self:update_steering(dt)
+    self:rotate_towards_velocity(dt)
   end
-  self:seek_point(player.x, player.y)
-  self:wander(50, 100, 20, dt)
-  self:steering_separate(16, enemies)
-  self:update_steering(dt)
-  self:rotate_towards_velocity(dt)
+  if self:is_colliding_with_object(player) then
+    self.reached_center = true
+    self.dead = true
+  end
 end
 
 function Enemy:update_statuses(dt)
@@ -72,7 +76,7 @@ function Enemy:spawn_hit_particles(r, impact_color)
   impact_color = impact_color or self.hit_color
   for index = 1, 3 do
     local width = 4.5 + love.math.random() * 2.5
-    self.effects[#self.effects + 1] = HitParticle{
+    self.effects:add(HitParticle{
       x = self.x,
       y = self.y,
       r = r + (love.math.random() * 2 - 1) * math.pi / 2,
@@ -81,17 +85,17 @@ function Enemy:spawn_hit_particles(r, impact_color)
       width = width,
       height = width / 2,
       color = index == 1 and impact_color or self.color,
-    }
+    })
   end
 
-  self.effects[#self.effects + 1] = HitCircle{
+  self.effects:add(HitCircle{
     x = self.x,
     y = self.y,
     radius = 7,
     duration = 0.08,
     color = self.hit_color,
     target_color = impact_color,
-  }
+  })
 end
 
 function Enemy:hit(damage)
@@ -105,20 +109,20 @@ end
 
 function Enemy:on_death()
   for _ = 1, love.math.random(4, 6) do
-    self.effects[#self.effects + 1] = HitParticle{
+    self.effects:add(HitParticle{
       x = self.x,
       y = self.y,
       color = self.color,
-    }
+    })
   end
 
-  self.effects[#self.effects + 1] = HitCircle{
+  self.effects:add(HitCircle{
     x = self.x,
     y = self.y,
     radius = 12,
     color = self.hit_color,
     target_color = self.color,
-  }
+  })
 end
 
 function Enemy:get_color()

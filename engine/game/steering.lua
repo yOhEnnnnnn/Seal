@@ -50,11 +50,12 @@ function Physics:steering_separate(radius, objects, weight)
   self.separation_fx, self.separation_fy = 0, 0
 
   for _, object in ipairs(objects or {}) do
-    if object.id ~= self.id then
+    if object ~= self and not object.dead then
       local tx, ty = self.x - object.x, self.y - object.y
-      local distance = math.sqrt(tx * tx + ty * ty)
+      local distance_squared = tx * tx + ty * ty
 
-      if distance > 0 and distance < 2 * radius then
+      if distance_squared > 0 and distance_squared < 4 * radius * radius then
+        local distance = math.sqrt(distance_squared)
         self.separation_fx = self.separation_fx + radius * tx / distance * (weight or 1)
         self.separation_fy = self.separation_fy + radius * ty / distance * (weight or 1)
       end

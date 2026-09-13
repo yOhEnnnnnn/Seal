@@ -1,4 +1,5 @@
 Physics = Object:extend()
+local Collision = require("engine.game.collision")
 
 local function get_shape(object)
   if object.shape then
@@ -154,8 +155,7 @@ function Physics:is_colliding_with_object(object)
     local radius = self_a + other_a
     return dx * dx + dy * dy <= radius * radius
   elseif self_type == "rectangle" and other_type == "rectangle" then
-    return math.abs(object.x - self.x) <= (self_a + other_a) / 2
-      and math.abs(object.y - self.y) <= (self_b + other_b) / 2
+    return Collision.rectangles(self, self_a, self_b, object, other_a, other_b)
   elseif self_type == "circle" and other_type == "rectangle" then
     return circle_rectangle_collision(self, self_a, object, other_a, other_b)
   elseif self_type == "rectangle" and other_type == "circle" then
