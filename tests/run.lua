@@ -259,6 +259,14 @@ test("inventory switching and rejected attacks preserve ammunition", function()
   assert(not inventory:add("normal", -1))
 end)
 
+test("successful firing applies directional camera recoil", function()
+  local camera = Camera{240, 135, 480, 270}
+  local inventory = Inventory{normal = 1}
+  local player = Player{inventory = inventory, camera = camera}
+  assert(player:try_attack(100, 135, Group(), Group()))
+  assert(camera.spring_x.x < 0 and math.abs(camera.spring_y.x) < 1e-8)
+end)
+
 test("screen input routes purchases and NEXT without firing", function()
   local game = Game()
   game:mousepressed(120, 188, 1)

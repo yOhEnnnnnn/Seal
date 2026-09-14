@@ -10,6 +10,7 @@ function Player:init(args)
   self.shadow_color = self.shadow_color or {0, 0, 0, 0.35}
   self.max_projectiles = self.max_projectiles or 64
   self.inventory = assert(args.inventory, "Player requires an ammo inventory")
+  self.camera = args.camera
   self.base_attack_interval = self.base_attack_interval or 0.10
   self.base_attack_cooldown_time = 0
   self.base_projectile_speed = self.base_projectile_speed or 160
@@ -51,7 +52,7 @@ function Player:fire_bullet(aim_x, aim_y, projectiles, effects)
     projectile_attack_sound:setPitch(0.95 + love.math.random() * 0.1)
     projectile_attack_sound:play()
   end
-  return true
+  return true, r
 end
 
 function Player:try_attack(aim_x, aim_y, projectiles, effects)
@@ -59,8 +60,11 @@ function Player:try_attack(aim_x, aim_y, projectiles, effects)
   local current_bullet = self.inventory:ensure_current()
   if self.inventory.counts[current_bullet] <= 0 then return end
 
-  local fired = self:fire_bullet(aim_x, aim_y, projectiles, effects)
-  if fired then self.inventory:consume() end
+  local fired, angle = self:fire_bullet(aim_x, aim_y, projectiles, effects)
+  if fired then
+    self.inventory:consume()
+    if self.camera then self.camera:spring_shake(2, angle) end
+  end
   return fired
 end
 

@@ -30,18 +30,21 @@ function Game:init()
   projectile_attack_sound:setVolume(0.2)
 
   self.canvas = Canvas(gw, gh)
+  self.camera = Camera(gw / 2, gh / 2, gw, gh)
   local x, y = gw / 2, gh / 2
+  local padding = 16
   self.background_polygons = {
-    {x, y, 0, 0, 170, 0},
-    {x, y, gw, 212, gw, gh, 310, gh},
-    {x, y, 310, 0, gw, 0, gw, 58},
-    {x, y, 170, gh, 0, gh, 0, 212},
+    {x, y, -padding, -padding, 170, -padding},
+    {x, y, gw + padding, 212, gw + padding, gh + padding, 310, gh + padding},
+    {x, y, 310, -padding, gw + padding, -padding, gw + padding, 58},
+    {x, y, 170, gh + padding, -padding, gh + padding, -padding, 212},
   }
   self.draw_scene_action = function() self:draw_scene() end
   self:reset_run()
 end
 
 function Game:reset_run()
+  self.camera:reset()
   self.level, self.score, self.state = 1, 0, "shop"
   self.coins = 10
   self.inventory = Inventory()
@@ -98,6 +101,8 @@ end
 
 function Game:update(dt)
   if self.state == "playing" then self.arena:update(dt) end
+  if self.state == "playing" then self.camera:update(dt)
+  else self.camera:reset() end
 end
 
 function Game:draw_background()
@@ -111,15 +116,22 @@ function Game:draw_background()
 end
 
 function Game:draw_scene()
-  self:draw_background()
   local x, y = self.canvas:to_canvas_position(love.mouse.getPosition())
+  local world_x, world_y = self.camera:to_world(x, y)
+
+  self.camera:attach()
+  self:draw_background()
+  if self.state == "playing" then
+    self.arena:draw(world_x, world_y)
+  end
+  self.camera:detach()
+
   if self.state == "failed" then
     self.hud:draw_failure()
   elseif self:is_shop_open() then
     self.shop:draw(x, y)
     self.hud:draw_bullet_inventory(x, y)
   else
-    self.arena:draw(x, y)
     self.hud:draw(x, y)
   end
   if x then graphics.circle(x, y, 1.5, self.colors.foreground) end
@@ -148,6 +160,7 @@ function Game:mousepressed(x, y, button)
   if self:is_shop_open() then
     self.shop:mousepressed(mouse_x, mouse_y)
   elseif self.state == "playing" then
-    self.arena:mousepressed(mouse_x, mouse_y)
+    local world_x, world_y = self.camera:to_world(mouse_x, mouse_y)
+    self.arena:mousepressed(world_x, world_y)
   end
 end

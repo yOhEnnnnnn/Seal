@@ -7,7 +7,12 @@ function Arena:init(game)
   self.spawn_timer = self.spawn_interval
   self.next_spawn_side = 1
   self.max_enemies = 60
-  self.player = Player{x = gw / 2, y = gh / 2, inventory = game.inventory}
+  self.player = Player{
+    x = gw / 2,
+    y = gh / 2,
+    inventory = game.inventory,
+    camera = game.camera,
+  }
   self.projectiles = Group()
   self.effects = Group()
   self.enemies = Group{on_remove = function(enemy)
