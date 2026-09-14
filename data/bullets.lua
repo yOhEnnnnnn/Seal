@@ -12,7 +12,7 @@ Bullets = {
     multiplier = 2,
     pierce = 1,
     shop_price = 5,
-    shop_amount = 6,
+    shop_amount = 8,
   },
   bounce = {
     name = "BOUNCE",
@@ -20,13 +20,13 @@ Bullets = {
     multiplier = 2,
     bounces = 1,
     shop_price = 5,
-    shop_amount = 5,
+    shop_amount = 7,
   },
   chain = {
     name = "CHAIN",
     color = {33 / 255, 199 / 255, 1, 1},
     multiplier = 3,
     shop_price = 7,
-    shop_amount = 3,
+    shop_amount = 5,
   },
 }
