@@ -5,6 +5,9 @@ Bullets = {
     color = {1, 1, 1, 1},
     multiplier = 1,
     starting_amount = 30,
+    shop_price = 3,
+    shop_amount = 10,
+    shop_limit = 5,
   },
   pierce = {
     name = "PIERCE",

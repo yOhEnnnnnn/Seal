@@ -389,4 +389,52 @@ test("level transition replaces battle objects but retains run resources", funct
   assert(not game:start_next_level() and game.arena == active_arena)
 end)
 
+test("normal ammo repeats with doubling prices and no charge on failure", function()
+  local game = Game()
+  game.coins = 10
+  local item = game.shop.ammo
+  assert(game.shop:buy(item))
+  assert(game.coins == 7 and item.price == 6 and game.inventory.counts.normal == 40)
+  assert(game.shop:buy(item))
+  assert(game.coins == 1 and item.price == 12 and game.inventory.counts.normal == 50)
+  assert(not item.sold and not game.shop:buy(item))
+  assert(game.coins == 1 and item.price == 12 and game.inventory.counts.normal == 50)
+end)
+
+test("supply click does not buy MARK and price resets next shop", function()
+  local game = Game()
+  local button = game.shop.ammo_button
+  game:mousepressed((button.x + 10) * 2, (button.y + 10) * 2, 1)
+  assert(game.inventory.counts.normal == 40 and game.coins == 7)
+  assert(game.enemy_traits.haste == 0 and not game.shop.marks[1].sold)
+  game:start_next_level()
+  assert(not game.shop:buy(game.shop.ammo))
+  for _ = 1, 10 do game:enemy_killed() end
+  assert(game.shop.ammo.price == 3 and game.inventory.counts.normal == 40)
+  assert(game.shop:buy(game.shop.ammo))
+  game.level, game.state = #levels, "level_complete"
+  assert(not game.shop:buy(game.shop.ammo))
+end)
+
+test("normal ammo sells out after five purchases and resets next shop", function()
+  local game = Game()
+  game.coins = 1000
+  local item = game.shop.ammo
+  for index = 1, 5 do
+    assert(item.price == 3 * 2 ^ (index - 1))
+    assert(game.shop:buy(item))
+  end
+  assert(item.sold and item.purchases == 5)
+  assert(game.coins == 907 and game.inventory.counts.normal == 80)
+  assert(not game.shop:buy(item))
+  assert(game.coins == 907 and game.inventory.counts.normal == 80)
+  draw_text = {}
+  game.shop:draw_ammo(nil, nil)
+  assert(table.concat(draw_text, "|"):find("SOLD OUT", 1, true))
+  game:start_next_level()
+  for _ = 1, 10 do game:enemy_killed() end
+  assert(not item.sold and item.purchases == 0 and item.price == 3)
+  assert(game.shop:buy(item) and item.purchases == 1)
+end)
+
 print(passed .. " tests passed")

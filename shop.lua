@@ -6,6 +6,9 @@ function Shop:init(game)
   self.item_font = game.shop_item_font
   self.colors = game.colors
   self.next_button = {x = gw - 58, y = gh - 30, width = 48, height = 20}
+  self.ammo = self:create_bullet_item("normal")
+  self.ammo.purchases = 0
+  self.ammo_button = {x = 10, y = 31, width = 180, height = 20}
   self.bullets = {
     self:create_bullet_item("pierce"),
     self:create_bullet_item("bounce"),
@@ -49,11 +52,12 @@ function Shop:init(game)
     local row = {}
     for index, item in ipairs(items) do
       row[index] = {item = item, x = 60 + (index - 1) * 80,
-        y = row_index == 1 and 94 or 211}
+        y = row_index == 1 and 112 or 211,
+        height = row_index == 1 and 68 or 90}
     end
     self.entries[row_index] = row
   end
-  self.items = {}
+  self.items = {[self.ammo] = true}
   for _, row in ipairs(self.rows) do
     for _, item in ipairs(row) do self.items[item] = true end
   end
@@ -73,6 +77,8 @@ function Shop:create_bullet_item(key)
 end
 
 function Shop:reset()
+  self.ammo.price = Bullets.normal.shop_price
+  self.ammo.purchases = 0
   for item in pairs(self.items) do item.sold = false end
   for _, row in ipairs(self.entries) do
     for _, entry in ipairs(row) do
@@ -100,7 +106,13 @@ function Shop:buy(item)
     return false
   end
   self.game.coins = self.game.coins - item.price
-  item.sold = true
+  if item == self.ammo then
+    item.purchases = item.purchases + 1
+    item.sold = item.purchases >= Bullets.normal.shop_limit
+    item.price = item.price * 2
+  else
+    item.sold = true
+  end
   return true
 end
 
@@ -111,7 +123,7 @@ end
 
 function Shop:is_inside_item(item, x, y)
   return x >= item.x - 40 and x <= item.x + 40 and
-    y >= item.y - 45 and y <= item.y + 45
+    y >= item.y - item.height / 2 and y <= item.y + item.height / 2
 end
 
 function Shop:hover_values(target, hovered)
@@ -141,7 +153,7 @@ function Shop:draw_item(entry, mouse_x, mouse_y)
   love.graphics.scale(1 + 0.03 * pulse + pop)
   if hovered then
     graphics.rectangle(
-      0, 0, 80, 90, 6, 6,
+      0, 0, 80, entry.height, 6, 6,
       graphics.color_with_alpha(
         self.colors.shop_selected, can_buy and 0.95 or 0.55))
   end
@@ -201,6 +213,26 @@ function Shop:draw_details(item)
   love.graphics.pop()
 end
 
+function Shop:draw_ammo(mouse_x, mouse_y)
+  local button, item = self.ammo_button, self.ammo
+  local hovered = mouse_x and self:is_inside(button, mouse_x, mouse_y)
+  local can_buy = self:can_buy(item)
+  local alpha = can_buy and (hovered and 1 or 0.78) or 0.3
+  love.graphics.push("all")
+  love.graphics.setFont(self.item_font)
+  if hovered then
+    graphics.rectangle(button.x + button.width / 2, button.y + button.height / 2,
+      button.width, button.height, 4, 4, self.colors.shop_selected)
+  end
+  self.game.hud:draw_icon(button.x + 10, button.y + 10, item.color, alpha)
+  graphics.set_color(graphics.color_with_alpha(item.color, alpha))
+  love.graphics.print("NORMAL +" .. item.amount, button.x + 23, button.y + 5)
+  graphics.set_color(graphics.color_with_alpha(self.colors.gold, alpha))
+  love.graphics.print(item.sold and "SOLD OUT" or item.price .. " GOLD",
+    button.x + 110, button.y + 5)
+  love.graphics.pop()
+end
+
 function Shop:draw_next(mouse_x, mouse_y)
   if not self.game:has_next_level() then
     graphics.set_color(self.colors.foreground)
@@ -252,7 +284,7 @@ function Shop:draw(mouse_x, mouse_y)
   love.graphics.print(self.game.coins, title_x, 9)
 
   graphics.set_color(self.colors.foreground)
-  love.graphics.print("SEAL", 10, 31)
+  love.graphics.print("SEAL", 10, 57)
   local hovered_item
   for _, entry in ipairs(self.entries[1]) do
     if self:draw_item(entry, mouse_x, mouse_y) then
@@ -268,10 +300,14 @@ function Shop:draw(mouse_x, mouse_y)
     end
   end
   self:draw_details(hovered_item)
+  self:draw_ammo(mouse_x, mouse_y)
   self:draw_next(mouse_x, mouse_y)
 end
 
 function Shop:mousepressed(x, y)
+  if self:is_inside(self.ammo_button, x, y) then
+    return self:buy(self.ammo)
+  end
   for _, row in ipairs(self.entries) do
     for _, entry in ipairs(row) do
       if self:is_inside_item(entry, x, y) and self:buy(entry.item) then
