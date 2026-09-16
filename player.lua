@@ -1,10 +1,12 @@
 Player = Object:extend()
 Player:implement(GameObject)
 Player:implement(Physics)
+Player:implement(Unit)
 
 function Player:init(args)
   self:init_game_object(args)
   self:init_physics(args)
+  self:init_unit(args)
   self.size = self.size or 7
   self.color = self.color or {250 / 255, 207 / 255, 0, 1}
   self.shadow_color = self.shadow_color or {0, 0, 0, 0.35}
@@ -15,14 +17,25 @@ function Player:init(args)
   self.base_attack_cooldown_time = 0
   self.base_projectile_speed = self.base_projectile_speed or 160
   self.base_projectile_damage = self.base_projectile_damage or 10
+  self.hit_color = self.hit_color or {1, 1, 1, 1}
+  self.hit_duration = 0.12
+  self.hit_time = 0
   self:set_as_rectangle(self.size, self.size, "dynamic", "player")
 end
 
 function Player:update(dt)
   self.x, self.y = gw / 2, gh / 2
   self:stop()
+  self.hit_time = math.max(self.hit_time - dt, 0)
   self.base_attack_cooldown_time = math.max(
     self.base_attack_cooldown_time - dt, 0)
+end
+
+function Player:hit(damage)
+  if self.dead then return end
+  self.hit_time = self.hit_duration
+  Unit.hit(self, damage)
+  if self.camera then self.camera:spring_shake(4, 0) end
 end
 
 function Player:fire_bullet(aim_x, aim_y, projectiles, effects)
@@ -77,6 +90,7 @@ function Player:draw()
   love.graphics.push("all")
   love.graphics.translate(self.x, self.y)
   self:draw_rounded_square(1, 1, self.size, self.shadow_color)
-  self:draw_rounded_square(0, 0, self.size, self.color)
+  self:draw_rounded_square(0, 0, self.size,
+    self.hit_time > 0 and self.hit_color or self.color)
   love.graphics.pop()
 end

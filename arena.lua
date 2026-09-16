@@ -66,6 +66,7 @@ function Arena:update(dt)
   self:update_enemy_spawning(dt)
 
   self.enemies:update(dt, self.player, self.enemies)
+  if self.player.dead then self.game:fail() end
   self.projectiles:update(dt, self.enemies)
   self.effects:update(dt, self.enemies)
   -- Settle this frame's kills before checking whether ammunition ran out.

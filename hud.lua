@@ -67,12 +67,31 @@ function HUD:draw(mouse_x, mouse_y)
     140,
     "right")
 
+  self:draw_health()
   self:draw_bullet_inventory(mouse_x, mouse_y)
 end
 
-function HUD:draw_failure()
+function HUD:draw_health()
+  local player = self.game.arena.player
+  local ratio = math.max(0, player.hp / player.max_hp)
+  local color = ratio > 0.5 and self.colors.green or
+    (ratio > 0.25 and self.colors.gold or self.colors.red)
+  local width = 84
+
+  graphics.rectangle(10 + width / 2, 35, width, 6, nil, nil,
+    self.colors.hp_bar_background)
+  graphics.rectangle(10 + width * ratio / 2, 35, width * ratio, 6,
+    nil, nil, color)
   graphics.set_color(self.colors.foreground)
-  love.graphics.printf("OUT OF AMMO", 0, gh / 2 - 20, gw, "center")
+  love.graphics.print(
+    "HP: " .. math.ceil(player.hp) .. " / " .. player.max_hp, 10, 40)
+end
+
+function HUD:draw_failure()
+  local message = self.game.arena.player.dead and
+    "PLAYER DESTROYED" or "OUT OF AMMO"
+  graphics.set_color(self.colors.foreground)
+  love.graphics.printf(message, 0, gh / 2 - 20, gw, "center")
   love.graphics.printf("PRESS R TO RESTART", 0, gh / 2 + 4, gw, "center")
 end
 

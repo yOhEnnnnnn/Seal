@@ -44,6 +44,7 @@ function Enemy:update(dt, player, enemies)
     self:rotate_towards_velocity(dt)
   end
   if self:is_colliding_with_object(player) then
+    player:hit(self.damage)
     self.reached_center = true
     self.dead = true
   end

@@ -140,10 +140,10 @@ test("ammo totals come exclusively from shared inventory", function()
   assert(run.inventory:ensure_current() == "pierce")
   assert(player:try_attack(100, 0, Group(), Group()))
   assert(run.inventory:get_count() == 1)
-  assert(shop:buy(shop.bullets[2]))
-  assert(run.inventory:get_count() == 6 and run.coins == 5)
-  assert(not shop:buy(shop.bullets[3]))
-  assert(run.inventory:get_count() == 6)
+  assert(shop:buy(shop.bullets[1]))
+  assert(run.inventory:get_count() == 9 and run.coins == 5)
+  assert(not shop:buy(shop.bullets[1]))
+  assert(run.inventory:get_count() == 9)
 end)
 
 test("compaction preserves survivors and removes each death once", function()
@@ -227,7 +227,7 @@ test("shop enforces purchases without UI or platform APIs", function()
   assert(not shop:buy({kind = "bullet", key = "normal", price = 0, amount = 99}))
   assert(not shop:buy(nil))
   assert(shop:buy(offer) and offer.sold)
-  assert(run.coins == 5 and run.inventory.counts.pierce == 6)
+  assert(run.coins == 5 and run.inventory.counts.pierce == 8)
   assert(not shop:buy(offer))
   assert(shop:buy(shop.marks[1]))
   assert(run.coins == 1 and run.enemy_traits.haste == 1)
@@ -262,7 +262,7 @@ end)
 test("successful firing applies directional camera recoil", function()
   local camera = Camera{240, 135, 480, 270}
   local inventory = Inventory{normal = 1}
-  local player = Player{inventory = inventory, camera = camera}
+  local player = Player{x = 0, y = 135, inventory = inventory, camera = camera}
   assert(player:try_attack(100, 135, Group(), Group()))
   assert(camera.spring_x.x < 0 and math.abs(camera.spring_y.x) < 1e-8)
 end)
@@ -270,7 +270,7 @@ end)
 test("screen input routes purchases and NEXT without firing", function()
   local game = Game()
   game:mousepressed(120, 188, 1)
-  assert(game.coins == 5 and game.inventory.counts.pierce == 6)
+  assert(game.coins == 5 and game.inventory.counts.pierce == 8)
   assert(game.shop.bullets[1].sold and #game.arena.projectiles == 0)
   game:mousepressed(120, 188, 1)
   assert(game.coins == 5)
@@ -280,7 +280,7 @@ test("screen input routes purchases and NEXT without firing", function()
   game:keypressed("q")
   assert(game.inventory:get_current() == "pierce")
   game:mousepressed(600, 270, 1)
-  assert(#game.arena.projectiles == 1 and game.inventory.counts.pierce == 5)
+  assert(#game.arena.projectiles == 1 and game.inventory.counts.pierce == 7)
 end)
 
 test("hover and drawing leave catalog and run state unchanged", function()
@@ -327,17 +327,48 @@ test("restart refreshes inventory arena and shop without stale offers", function
   assert(game.shop.game == game and game.hud.game == game)
   assert(not game.shop:buy(old_offer))
   game.shop:mousepressed(60, 94)
-  assert(game.inventory.counts.pierce == 6 and game.coins == 5)
-  assert(old_inventory.counts.pierce == 6)
+  assert(game.inventory.counts.pierce == 8 and game.coins == 5)
+  assert(old_inventory.counts.pierce == 8)
 end)
 
-test("player has collision but no enemy steering or health behavior", function()
+test("player has collision and no enemy steering behavior", function()
   local game = Game()
   assert(game.arena.player.is_colliding_with_object)
-  assert(game.arena.player.seek_point == nil and game.arena.player.hit == nil)
+  assert(game.arena.player.seek_point == nil and game.arena.player.hit)
   local target = Enemy{x = 100, y = 100}
   target:update(0.01, game.arena.player, {target})
   assert(target.seek_point and target.hit)
+end)
+
+test("enemy collision damages player and ends the enemy", function()
+  local game = Game()
+  local player = game.arena.player
+  local target = Enemy{
+    x = player.x,
+    y = player.y,
+    effects = Group(),
+  }
+  local hp = player.hp
+  target:update(0, player, {target})
+  assert(player.hp == hp - target.damage)
+  assert(target.dead and target.reached_center)
+  assert(not player.dead)
+  assert(player.hit_time == player.hit_duration)
+end)
+
+test("player death fails the battle", function()
+  local game = Game()
+  assert(game:start_next_level())
+  local player = game.arena.player
+  local target = Enemy{
+    x = player.x,
+    y = player.y,
+    damage = player.hp,
+    effects = Group(),
+  }
+  game.arena.enemies:add(target)
+  game.arena:update(0)
+  assert(player.dead and game.state == "failed")
 end)
 
 test("level transition replaces battle objects but retains run resources", function()
@@ -352,7 +383,7 @@ test("level transition replaces battle objects but retains run resources", funct
   assert(game.level == 2 and game.score == 0)
   assert(game.arena ~= arena and #game.arena.enemies == 4)
   assert(game.inventory == inventory and game.arena.player.inventory == inventory)
-  assert(game.coins == coins and inventory.counts.pierce == 6)
+  assert(game.coins == coins and inventory.counts.pierce == 8)
   assert(not game.shop.entries[1][2].hovered)
   local active_arena = game.arena
   assert(not game:start_next_level() and game.arena == active_arena)
