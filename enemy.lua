@@ -7,6 +7,7 @@ Enemy:implement(Unit)
 function Enemy:init(args)
   self:init_game_object(args)
   self:init_physics(args)
+  self.base_score = self.base_score or 1
   self.max_hp = self.max_hp or 12.5
   self:init_unit(args)
   self.hp = self.hp or self.max_hp
@@ -25,12 +26,18 @@ function Enemy:init(args)
   self.hit_duration = 0.15
   self.hit_time = 0
   self.hp_bar_time = 0
+  self.slow_time = 0
+  self.slow_multiplier = 1
   self:set_as_rectangle(self.width, self.height, "dynamic", "enemy")
   self:set_as_steerable(self.v, 2000, 4 * math.pi, 4)
 end
 
 function Enemy:update(dt, player, enemies)
   if self.dead then return end
+  self.slow_time = math.max(self.slow_time - dt, 0)
+  if self.slow_time == 0 then self.slow_multiplier = 1 end
+  self.max_v = self.v * self.slow_multiplier
+  self.max_speed = self.max_v
   self.hit_spring:update(dt)
   self.hit_time = math.max(self.hit_time - dt, 0)
   self.hp_bar_time = math.max(self.hp_bar_time - dt, 0)
@@ -48,6 +55,11 @@ function Enemy:update(dt, player, enemies)
     self.reached_center = true
     self.dead = true
   end
+end
+
+function Enemy:slow(multiplier, duration)
+  self.slow_multiplier = math.min(self.slow_multiplier, multiplier)
+  self.slow_time = math.max(self.slow_time, duration)
 end
 
 function Enemy:spawn_hit_particles(r, impact_color)
@@ -76,13 +88,23 @@ function Enemy:spawn_hit_particles(r, impact_color)
   })
 end
 
-function Enemy:hit(damage)
+function Enemy:hit(damage, projectile)
   if self.dead then return end
   self.hit_spring:pull(0.25, 200, 10)
   self.hit_time = self.hit_duration
   self.hp_bar_time = 2
   if self.invincible then return end
   Unit.hit(self, damage * 100 / (100 + self.def))
+  if self.dead then
+    self.kill_score = self.base_score
+    if projectile then
+      if projectile.score_operation == "multiply" then
+        self.kill_score = self.base_score * projectile.score_value
+      else
+        self.kill_score = self.base_score + projectile.score_value
+      end
+    end
+  end
 end
 
 function Enemy:on_death()

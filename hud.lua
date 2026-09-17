@@ -95,9 +95,10 @@ function HUD:draw_failure()
   love.graphics.printf("PRESS R TO RESTART", 0, gh / 2 + 4, gw, "center")
 end
 
-function HUD:draw_icon(x, y, color, alpha)
-  graphics.rectangle(x + 1, y + 1, 14, 14, 3, 3,
+function HUD:draw_icon(x, y, color, alpha, size)
+  size = size or 14
+  graphics.rectangle(x + 1, y + 1, size, size, 3, 3,
     graphics.color_with_alpha(self.colors.hp_bar_background, alpha * 0.65))
-  graphics.rectangle(x, y, 14, 14, 3, 3,
+  graphics.rectangle(x, y, size, size, 3, 3,
     graphics.color_with_alpha(color, alpha))
 end

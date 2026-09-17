@@ -10,10 +10,8 @@ function Projectile:init(args)
   self.radius = self.radius or 2.5
   self.width = self.radius * 2
   self.height = self.radius * 2
-  self.color = self.color or {1, 1, 1, 1}
   self.effects = self.effects or Group()
-  self.pierce = self.pierce or 0
-  self.damage_decay = self.damage_decay or 1
+  Bullets.initialize(self)
   self.hit_enemies = self.hit_enemies or {}
   self:set_as_circle(self.radius, "dynamic", "projectile")
   self:set_velocity(self.speed * math.cos(self.r), self.speed * math.sin(self.r))
@@ -35,15 +33,7 @@ function Projectile:update(dt, enemies)
     if self.dead or wall_t > 1 then break end
 
     local hit_x, hit_y = tx <= ty, ty <= tx
-    if not self.bounces or self.bounces <= 0 then
-      self:spawn_wall_impact_particles(hit_x, hit_y)
-      self.dead = true
-      break
-    end
-    if hit_x then self.vx = -self.vx end
-    if hit_y then self.vy = -self.vy end
-    self.r = math.atan2(self.vy, self.vx)
-    self.bounces = self.bounces - 1
+    Bullets.hit_wall(self, hit_x, hit_y)
     remaining = remaining * (1 - travel)
   end
   if self.lifetime then
@@ -103,16 +93,7 @@ function Projectile:check_hits(enemies, end_x, end_y)
 
     self.x = start_x + (end_x - start_x) * hit_t
     self.y = start_y + (end_y - start_y) * hit_t
-    nearest:hit(self.damage)
-    self.hit_enemies[nearest] = true
-    nearest:spawn_hit_particles(self.r + math.pi, self.color)
-    if self.on_hit then self.on_hit(self, nearest, enemies) end
-    if self.pierce <= 0 then
-      self.dead = true
-      return
-    end
-    self.pierce = self.pierce - 1
-    self.damage = self.damage * self.damage_decay
+    Bullets.hit(self, nearest, enemies)
   end
 end
 

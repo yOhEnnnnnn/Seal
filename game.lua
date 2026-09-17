@@ -58,11 +58,11 @@ function Game:get_target_score()
   return levels[self.level].target_score
 end
 
-function Game:enemy_killed()
+function Game:enemy_killed(enemy)
   if self.state ~= "playing" then return false end
 
   self:add_coins(1)
-  self.score = self.score + 1
+  self.score = self.score + (enemy and (enemy.kill_score or enemy.base_score) or 1)
   if self.score >= self:get_target_score() then
     self.state = "level_complete"
   end
@@ -149,6 +149,7 @@ function Game:keypressed(key)
   end
   if key == "q" and self.state == "playing" then
     self.inventory:select_next()
+    self.arena.player:sync_bullet_visuals()
   end
   if key == "escape" then love.event.quit() end
 end

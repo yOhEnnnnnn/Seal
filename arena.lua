@@ -16,7 +16,7 @@ function Arena:init(game)
   self.projectiles = Group()
   self.effects = Group()
   self.enemies = Group{on_remove = function(enemy)
-    if not enemy.reached_center then game:enemy_killed() end
+    if not enemy.reached_center then game:enemy_killed(enemy) end
   end}
 end
 
@@ -72,7 +72,12 @@ function Arena:update(dt)
   -- Settle this frame's kills before checking whether ammunition ran out.
   self.enemies:remove_dead()
 
-  if self.game.inventory:get_count() == 0 and #self.projectiles == 0 then
+  local active_attack = false
+  for _, effect in ipairs(self.effects) do
+    if effect.can_damage then active_attack = true break end
+  end
+  if self.game.inventory:get_count() == 0 and #self.projectiles == 0 and
+    not active_attack then
     self.game:fail()
   end
 
@@ -85,6 +90,7 @@ end
 
 function Arena:draw_aim_ray(mouse_x, mouse_y)
   if not mouse_x then return end
+  if Bullets[self.game.inventory:get_current()].place then return end
 
   local dx, dy = mouse_x - self.player.x, mouse_y - self.player.y
   local length = math.sqrt(dx * dx + dy * dy)

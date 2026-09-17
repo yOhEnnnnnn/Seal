@@ -49,3 +49,18 @@ function graphics.line(x1, y1, x2, y2, color, line_width)
   love.graphics.line(x1, y1, x2, y2)
   love.graphics.pop()
 end
+
+function graphics.polyline(color, line_width, ...)
+  love.graphics.push("all")
+  set_style(color, line_width)
+  love.graphics.line(...)
+  love.graphics.pop()
+end
+
+function graphics.arc(arctype, x, y, radius, angle1, angle2, color, line_width)
+  love.graphics.push("all")
+  set_style(color, line_width)
+  love.graphics.arc(line_width and "line" or "fill",
+    arctype, x, y, radius, angle1, angle2)
+  love.graphics.pop()
+end

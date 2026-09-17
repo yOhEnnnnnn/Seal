@@ -9,10 +9,12 @@ function Shop:init(game)
   self.ammo = self:create_bullet_item("normal")
   self.ammo.purchases = 0
   self.ammo_button = {x = 10, y = 31, width = 180, height = 20}
-  self.bullets = {
+  self.bullet_catalog = {
     self:create_bullet_item("pierce"),
     self:create_bullet_item("bounce"),
     self:create_bullet_item("chain"),
+    self:create_bullet_item("ember"),
+    self:create_bullet_item("frost"),
   }
   self.marks = {
     {
@@ -46,14 +48,28 @@ function Shop:init(game)
       color = {179 / 255, 136 / 255, 1, 1},
     },
   }
+  self:roll_bullets()
+  self:rebuild_layout()
+end
+
+function Shop:roll_bullets()
+  local pool = {}
+  for index, item in ipairs(self.bullet_catalog) do pool[index] = item end
+  self.bullets = {}
+  for index = 1, 3 do
+    self.bullets[index] = table.remove(pool, love.math.random(1, #pool))
+  end
+end
+
+function Shop:rebuild_layout()
   self.rows = {self.bullets, self.marks}
   self.entries = {}
   for row_index, items in ipairs(self.rows) do
     local row = {}
     for index, item in ipairs(items) do
-      row[index] = {item = item, x = 60 + (index - 1) * 80,
-        y = row_index == 1 and 112 or 211,
-        height = row_index == 1 and 68 or 90}
+      row[index] = {item = item, x = 52 + (index - 1) * 90,
+        y = row_index == 1 and 118 or 221,
+        height = 90}
     end
     self.entries[row_index] = row
   end
@@ -71,7 +87,6 @@ function Shop:create_bullet_item(key)
     name = bullet.name,
     price = bullet.shop_price,
     amount = bullet.shop_amount,
-    multiplier = bullet.multiplier,
     color = bullet.color,
   }
 end
@@ -79,13 +94,11 @@ end
 function Shop:reset()
   self.ammo.price = Bullets.normal.shop_price
   self.ammo.purchases = 0
-  for item in pairs(self.items) do item.sold = false end
-  for _, row in ipairs(self.entries) do
-    for _, entry in ipairs(row) do
-      entry.hovered = false
-      entry.hover_started_at = nil
-    end
-  end
+  self.ammo.sold = false
+  for _, item in ipairs(self.bullet_catalog) do item.sold = false end
+  for _, item in ipairs(self.marks) do item.sold = false end
+  self:roll_bullets()
+  self:rebuild_layout()
   self.next_button.hovered = false
   self.next_button.hover_started_at = nil
 end
@@ -163,30 +176,31 @@ function Shop:draw_item(entry, mouse_x, mouse_y)
   love.graphics.translate(entry.x, entry.y - 26)
   love.graphics.scale(1 + pop, 1 + pop)
   love.graphics.setFont(self.item_font)
-  self.game.hud:draw_icon(0, 0, item.color, alpha)
+  local price_box_size = 20
+  self.game.hud:draw_icon(0, 0, item.color, alpha, price_box_size)
   graphics.set_color(
     graphics.color_with_alpha(self.colors.background_dark, alpha))
   love.graphics.printf(
-    item.price, -6,
-    -self.item_font:getHeight() / 2 + 1, 14, "center")
+    item.price, -price_box_size / 2 + 1,
+    -self.item_font:getHeight() / 2 + 1, price_box_size, "center")
   graphics.set_color(graphics.color_with_alpha(self.colors.gold, alpha))
   love.graphics.printf(
-    item.price, -7,
-    -self.item_font:getHeight() / 2, 14, "center")
+    item.price, -price_box_size / 2,
+    -self.item_font:getHeight() / 2, price_box_size, "center")
   graphics.set_color(
     graphics.color_with_alpha(self.colors.hp_bar_background, alpha * 0.75))
-  love.graphics.printf(string.lower(item.name), -39, 11, 80, "center")
+  love.graphics.printf(string.lower(item.name), -39, 15, 80, "center")
   graphics.set_color(graphics.color_with_alpha(item.color, alpha))
-  love.graphics.printf(string.lower(item.name), -40, 10, 80, "center")
+  love.graphics.printf(string.lower(item.name), -40, 14, 80, "center")
   if item.kind == "mark" then
     local level_text = tostring(self.game.enemy_traits[item.key])
     graphics.set_color(
       graphics.color_with_alpha(
         self.colors.hp_bar_background, alpha * 0.75))
-    love.graphics.printf(level_text, -39, 28, 80, "center")
+    love.graphics.printf(level_text, -39, 32, 80, "center")
     graphics.set_color(
       graphics.color_with_alpha(self.colors.foreground, alpha))
-    love.graphics.printf(level_text, -40, 27, 80, "center")
+    love.graphics.printf(level_text, -40, 31, 80, "center")
   end
   love.graphics.pop()
 
@@ -204,7 +218,9 @@ function Shop:draw_details(item)
   graphics.set_color(self.colors.foreground)
   if item.kind == "bullet" then
     love.graphics.print("+" .. item.amount .. " BULLETS", 292, y + 13)
-    love.graphics.print("SCORE X" .. item.multiplier, 292, y + 26)
+    local scoring = self.game.inventory.scoring[item.key]
+    local symbol = scoring.operation == "multiply" and "X" or "+"
+    love.graphics.print("KILL SCORE " .. symbol .. scoring.value, 292, y + 26)
   else
     love.graphics.print("+" .. item.amount .. " MARK", 292, y + 13)
     love.graphics.print(item.effect, 292, y + 26)
@@ -293,7 +309,7 @@ function Shop:draw(mouse_x, mouse_y)
   end
 
   graphics.set_color(self.colors.foreground)
-  love.graphics.print("MARK", 10, 148)
+  love.graphics.print("MARK", 10, 160)
   for _, entry in ipairs(self.entries[2]) do
     if self:draw_item(entry, mouse_x, mouse_y) then
       hovered_item = entry.item
