@@ -67,6 +67,19 @@ function HUD:draw(mouse_x, mouse_y)
     140,
     "right")
 
+  if self.game.combo_multiplier > 1 then
+    graphics.set_color(self.colors.gold)
+    love.graphics.printf(
+      string.format("COMBO X%.1f", self.game.combo_multiplier),
+      0, 9, gw, "center")
+  end
+  if self.game.danger_level > 0 then
+    graphics.set_color(self.colors.red)
+    love.graphics.printf(
+      "DANGER " .. self.game.danger_level,
+      0, 27, gw, "center")
+  end
+
   self:draw_health()
   self:draw_bullet_inventory(mouse_x, mouse_y)
   if self.game.can_extract then

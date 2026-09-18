@@ -62,6 +62,12 @@ function Game:reset_run()
   self.camera:reset()
   self.transition = nil
   self.can_extract = false
+  self.combo_multiplier = 1
+  self.combo_timer = 0
+  self.danger_level = 0
+  self.danger_time = 0
+  self.gold_fraction = 0
+  self.secured_coins = nil
   self.level, self.score, self.state = 1, 0, "shop"
   self.coins = 8
   self.inventory = Inventory()
@@ -78,10 +84,29 @@ end
 function Game:enemy_killed(enemy)
   if self.state ~= "playing" then return false end
 
-  self:add_coins(enemy and enemy.base_score or 1)
-  self.score = self.score + (enemy and (enemy.kill_score or enemy.base_score) or 1)
-  if self.score >= self:get_target_score() then
+  local base_score = enemy and enemy.base_score or 1
+  local kill_score = enemy and (enemy.kill_score or base_score) or 1
+  self.score = self.score + math.floor(
+    kill_score * self.combo_multiplier + 0.5)
+  local source = enemy and enemy.killed_by
+  local combo_gain = 0.1
+  if source and source.bullet == BulletType.PIERCE and
+    enemy.kill_sequence > 1 then combo_gain = 0.2 end
+  self.combo_multiplier = math.min(3, self.combo_multiplier + combo_gain)
+  self.combo_timer = 1.5 + math.min(self.enemy_traits.haste * 0.15, 0.45)
+  if source and source.bullet == BulletType.EMBER then
+    self.combo_timer = math.max(self.combo_timer, 2.5)
+  end
+
+  self.gold_fraction = self.gold_fraction +
+    base_score * (1 + self.danger_level * 0.15)
+  local gold = math.floor(self.gold_fraction)
+  self.gold_fraction = self.gold_fraction - gold
+  self:add_coins(gold)
+
+  if not self.can_extract and self.score >= self:get_target_score() then
     self.can_extract = true
+    self.secured_coins = self.coins
   end
   return true
 end
@@ -95,7 +120,11 @@ function Game:is_shop_open()
 end
 
 function Game:fail()
-  if self.state == "playing" then self.state = "failed" end
+  if self.state ~= "playing" then return end
+  if self.can_extract and self.secured_coins then
+    self.coins = self.secured_coins
+  end
+  self.state = "failed"
 end
 
 function Game:has_next_level()
@@ -110,6 +139,9 @@ function Game:start_next_level()
   if not self:is_shop_open() or not self:has_next_level() then return false end
   if self.state ~= "shop" then self.level = self.level + 1 end
   self.score, self.state, self.can_extract = 0, "playing", false
+  self.combo_multiplier, self.combo_timer = 1, 0
+  self.danger_level, self.danger_time = 0, 0
+  self.gold_fraction, self.secured_coins = 0, nil
   self.shop:reset()
   self.arena = Arena(self)
   self.arena:start()
@@ -167,7 +199,17 @@ function Game:transition_to_next_level(x, y)
 end
 
 function Game:update(dt)
-  if self.state == "playing" and not self.transition then self.arena:update(dt) end
+  if self.state == "playing" and not self.transition then
+    self.combo_timer = math.max(self.combo_timer - dt, 0)
+    if self.combo_timer == 0 then
+      self.combo_multiplier = math.max(1, self.combo_multiplier - dt * 1.5)
+    end
+    if self.can_extract then
+      self.danger_time = self.danger_time + dt
+      self.danger_level = math.min(5, math.floor(self.danger_time / 10))
+    end
+    self.arena:update(dt)
+  end
   if self.state == "playing" then self.camera:update(dt)
   else self.camera:reset() end
   if self.transition then

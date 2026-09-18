@@ -107,7 +107,8 @@ function Arena:update_enemy_spawning(dt)
 
   self:spawn_enemy(self.next_spawn_side)
   self.next_spawn_side = self.next_spawn_side % 4 + 1
-  self.spawn_timer = self.spawn_interval
+  self.spawn_timer = self.spawn_interval *
+    (1 - self.game.danger_level * 0.1)
 end
 
 function Arena:update(dt)

@@ -47,7 +47,9 @@ Bullets = {
     shop_amount = 5,
     chain_range = 80,
     on_hit = function(projectile, origin, enemies)
-      local closest, distance_squared = nil, projectile.definition.chain_range ^ 2
+      local range = projectile.definition.chain_range *
+        (origin.slow_time and origin.slow_time > 0 and 1.5 or 1)
+      local closest, distance_squared = nil, range ^ 2
       for _, enemy in ipairs(enemies) do
         if not enemy.dead and not projectile.hit_enemies[enemy] then
           local dx, dy = enemy.x - origin.x, enemy.y - origin.y
@@ -146,4 +148,7 @@ function Bullets.hit_wall(projectile, hit_x, hit_y)
   if hit_y then projectile.vy = -projectile.vy end
   projectile.r = math.atan2(projectile.vy, projectile.vx)
   projectile.bounces = projectile.bounces - 1
+  if projectile.score_operation == "add" then
+    projectile.score_value = projectile.score_value + 1
+  end
 end

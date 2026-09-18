@@ -96,6 +96,11 @@ function Enemy:hit(damage, projectile)
   if self.invincible then return end
   Unit.hit(self, damage * 100 / (100 + self.def))
   if self.dead then
+    self.killed_by = projectile
+    if projectile then
+      projectile.kill_count = (projectile.kill_count or 0) + 1
+      self.kill_sequence = projectile.kill_count
+    end
     self.kill_score = self.base_score
     if projectile then
       if projectile.score_operation == "multiply" then

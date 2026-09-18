@@ -239,6 +239,29 @@ test("reaching the target keeps combat running until extraction", function()
   assert(game:is_level_complete() and game.transition.switched)
 end)
 
+test("combo rewards fast kills and danger risks only surplus gold", function()
+  local game = Game()
+  game.state = "playing"
+  game.arena.spawn_timer = 100
+  local valuable = {base_score = 10, kill_score = 10}
+  game:enemy_killed(valuable)
+  game:enemy_killed(valuable)
+  assert(game.score == 21)
+  near(game.combo_multiplier, 1.2)
+  game:update(2)
+  assert(game.combo_multiplier == 1)
+
+  game.can_extract = true
+  game.secured_coins = game.coins
+  local secured = game.coins
+  game:update(10.1)
+  assert(game.danger_level == 1)
+  game:enemy_killed(valuable)
+  assert(game.coins > secured)
+  game:fail()
+  assert(game.coins == secured)
+end)
+
 test("dead enemies do not contribute separation forces", function()
   local target = enemy(100, 100)
   target:steering_separate(16, {target, {x = 101, y = 100, dead = true},
@@ -655,7 +678,8 @@ test("bullet enum provides isolated projectile defaults", function()
   assert(b.pierce == 1 and Bullets.pierce.pierce == 1)
   local bounce = Projectile{bullet = BulletType.BOUNCE, x = 470, y = 100}
   bounce:update(0.1, {})
-  assert(bounce.bounces == 0 and bounce.vx < 0 and not bounce.dead)
+  assert(bounce.bounces == 0 and bounce.vx < 0 and not bounce.dead and
+    bounce.score_value == 3)
 end)
 
 test("chain hits only the nearest living unhit enemy and preserves scoring", function()
