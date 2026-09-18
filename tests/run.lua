@@ -17,7 +17,7 @@ love = {
     setFont = noop,
     newFont = function() font_loads = font_loads + 1; return font end,
     newCanvas = function() return {setFilter = noop} end,
-    newShader = function(path) return {path = path} end,
+    newShader = function(path) return {path = path, send = noop} end,
     getDimensions = function() return 960, 540 end,
     push = function() stack_depth = stack_depth + 1 end,
     pop = function() stack_depth = stack_depth - 1; assert(stack_depth >= 0) end,
@@ -248,6 +248,11 @@ test("combo rewards fast kills and danger risks only surplus gold", function()
   game:enemy_killed(valuable)
   assert(game.score == 21)
   near(game.combo_multiplier, 1.2)
+  assert(game.hud.combo_flame_shader.path ==
+    "assets/shaders/combo_flame.frag")
+  game.combo_multiplier = 2
+  game.hud:draw(nil, nil)
+  assert(stack_depth == 0)
   game:update(2)
   assert(game.combo_multiplier == 1)
 

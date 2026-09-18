@@ -5,6 +5,10 @@ function HUD:init(game)
   self.ui_font = game.ui_font
   self.item_font = game.shop_item_font
   self.colors = game.colors
+  self.combo_canvas = love.graphics.newCanvas(160, 48, {msaa = 0})
+  self.combo_canvas:setFilter("nearest", "nearest")
+  self.combo_flame_shader = love.graphics.newShader(
+    "assets/shaders/combo_flame.frag")
 end
 
 function HUD:draw_bullet_inventory(mouse_x, mouse_y)
@@ -67,12 +71,7 @@ function HUD:draw(mouse_x, mouse_y)
     140,
     "right")
 
-  if self.game.combo_multiplier > 1 then
-    graphics.set_color(self.colors.gold)
-    love.graphics.printf(
-      string.format("COMBO X%.1f", self.game.combo_multiplier),
-      0, 9, gw, "center")
-  end
+  self:draw_combo()
   if self.game.danger_level > 0 then
     graphics.set_color(self.colors.red)
     love.graphics.printf(
@@ -90,6 +89,45 @@ function HUD:draw(mouse_x, mouse_y)
         "TARGET REACHED - PRESS P TO ENTER SHOP",
       0, gh - 25, gw, "center")
   end
+end
+
+function HUD:draw_combo()
+  if self.game.combo_multiplier <= 1 then return end
+  local text = string.format("COMBO X%.1f", self.game.combo_multiplier)
+  local intensity = math.max(0,
+    math.min((self.game.combo_multiplier - 1.4) / 1.6, 1))
+  local previous_canvas = love.graphics.getCanvas()
+
+  love.graphics.push("all")
+  love.graphics.setCanvas(self.combo_canvas)
+  love.graphics.origin()
+  love.graphics.clear(0, 0, 0, 0)
+  love.graphics.setFont(self.ui_font)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf(text, 0, 24, 160, "center")
+  love.graphics.setCanvas(previous_canvas)
+  love.graphics.pop()
+
+  local x, y = (gw - 160) / 2, -6
+  if intensity > 0 then
+    love.graphics.push("all")
+    self.combo_flame_shader:send("time", love.timer.getTime())
+    self.combo_flame_shader:send("intensity", intensity)
+    love.graphics.setShader(self.combo_flame_shader)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(self.combo_canvas, x, y)
+    love.graphics.pop()
+  end
+
+  local scale = 1 + 0.15 * self.game.combo_pulse
+  love.graphics.push("all")
+  love.graphics.translate(gw / 2, 18)
+  love.graphics.scale(scale, scale)
+  love.graphics.setFont(self.ui_font)
+  graphics.set_color(intensity == 1 and self.colors.foreground or
+    self.colors.gold)
+  love.graphics.printf(text, -80, 0, 160, "center")
+  love.graphics.pop()
 end
 
 function HUD:draw_health()

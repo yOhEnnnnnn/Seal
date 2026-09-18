@@ -64,6 +64,7 @@ function Game:reset_run()
   self.can_extract = false
   self.combo_multiplier = 1
   self.combo_timer = 0
+  self.combo_pulse = 0
   self.danger_level = 0
   self.danger_time = 0
   self.gold_fraction = 0
@@ -93,6 +94,7 @@ function Game:enemy_killed(enemy)
   if source and source.bullet == BulletType.PIERCE and
     enemy.kill_sequence > 1 then combo_gain = 0.2 end
   self.combo_multiplier = math.min(3, self.combo_multiplier + combo_gain)
+  self.combo_pulse = 1
   self.combo_timer = 1.5 + math.min(self.enemy_traits.haste * 0.15, 0.45)
   if source and source.bullet == BulletType.EMBER then
     self.combo_timer = math.max(self.combo_timer, 2.5)
@@ -139,7 +141,7 @@ function Game:start_next_level()
   if not self:is_shop_open() or not self:has_next_level() then return false end
   if self.state ~= "shop" then self.level = self.level + 1 end
   self.score, self.state, self.can_extract = 0, "playing", false
-  self.combo_multiplier, self.combo_timer = 1, 0
+  self.combo_multiplier, self.combo_timer, self.combo_pulse = 1, 0, 0
   self.danger_level, self.danger_time = 0, 0
   self.gold_fraction, self.secured_coins = 0, nil
   self.shop:reset()
@@ -201,6 +203,7 @@ end
 function Game:update(dt)
   if self.state == "playing" and not self.transition then
     self.combo_timer = math.max(self.combo_timer - dt, 0)
+    self.combo_pulse = math.max(self.combo_pulse - dt / 0.18, 0)
     if self.combo_timer == 0 then
       self.combo_multiplier = math.max(1, self.combo_multiplier - dt * 1.5)
     end
