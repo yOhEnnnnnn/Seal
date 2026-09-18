@@ -24,7 +24,7 @@ function Shop:init(game)
       name = "HASTE",
       price = 0,
       amount = 1,
-      effect = "SPEED +20%",
+      effect = "SPEED +10% / MAX 30%",
       value = 2,
       color = {1, 107 / 255, 107 / 255, 1},
     },

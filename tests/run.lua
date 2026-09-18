@@ -443,9 +443,12 @@ test("enemy marks increase risk and score on newly spawned enemies", function()
   game.arena = Arena(game)
   local target = game.arena:add_enemy(100, 100)
   near(target.max_hp, 15)
-  near(target.v, 25.2)
+  near(target.v, 23.1)
   assert(target.damage == 8 and target.def == 0)
   assert(target.base_score == 7 and target.fission)
+  game.enemy_traits.haste = 10
+  local capped = game.arena:add_enemy(120, 100)
+  near(capped.v, 27.3)
 end)
 
 test("fission creates two half-health children without recursive splitting", function()

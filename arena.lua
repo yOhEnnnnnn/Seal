@@ -55,7 +55,7 @@ function Arena:add_enemy(x, y, overrides)
     y = y,
     max_hp = overrides.max_hp or 10 + armor * 5,
     hp = overrides.hp,
-    v = overrides.v or 21 * 1.2 ^ haste,
+    v = overrides.v or 21 * (1 + math.min(haste * 0.1, 0.3)),
     damage = overrides.damage or 8,
     def = 0,
     base_score = overrides.base_score or
