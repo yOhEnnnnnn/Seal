@@ -264,9 +264,10 @@ test("shop enforces purchases without UI or platform APIs", function()
   assert(shop.mark_purchased)
   assert(run.coins == 100 - offer.price - shop.marks[1].price and
     run.enemy_traits.haste == 1)
+  assert(not shop:buy(shop.marks[1]))
+  assert(shop:buy(shop.marks[2]) and run.enemy_traits.armor == 1)
   run.coins = 0
-  assert(not shop:buy(shop.marks[2]))
-  assert(not shop.marks[2].sold and run.enemy_traits.armor == 0)
+  assert(shop:buy(shop.marks[3]) and run.enemy_traits.fission == 1)
   run:add_coins(100)
   run.state = "playing"
   assert(not shop:buy(shop.bullets[2]))
@@ -296,9 +297,18 @@ end)
 test("successful firing applies directional camera recoil", function()
   local camera = Camera{240, 135, 480, 270}
   local inventory = Inventory{normal = 1}
-  local player = Player{x = 0, y = 135, inventory = inventory, camera = camera}
+  local player = Player{x = 0, y = 135, inventory = inventory, camera = camera,
+    projectile_spread = 0}
   assert(player:try_attack(100, 135, Group(), Group()))
   assert(camera.spring_x.x < 0 and math.abs(camera.spring_y.x) < 1e-8)
+end)
+
+test("projectiles receive bounded random spread", function()
+  local inventory = Inventory{normal = 2}
+  local player = Player{x = 0, y = 0, inventory = inventory}
+  local projectiles = Group()
+  assert(player:try_attack(100, 0, projectiles, Group()))
+  assert(math.abs(projectiles[1].r) <= math.pi / 60)
 end)
 
 test("screen input routes purchases and NEXT without firing", function()
@@ -442,13 +452,15 @@ test("enemy marks increase risk and score on newly spawned enemies", function()
   game.enemy_traits = {haste = 1, armor = 1, fission = 1}
   game.arena = Arena(game)
   local target = game.arena:add_enemy(100, 100)
-  near(target.max_hp, 15)
+  near(target.max_hp, 14)
   near(target.v, 23.1)
   assert(target.damage == 8 and target.def == 0)
   assert(target.base_score == 7 and target.fission)
   game.enemy_traits.haste = 10
+  game.enemy_traits.armor = 10
   local capped = game.arena:add_enemy(120, 100)
   near(capped.v, 27.3)
+  near(capped.max_hp, 20)
 end)
 
 test("fission creates two half-health children without recursive splitting", function()

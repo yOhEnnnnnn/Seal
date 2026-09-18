@@ -18,6 +18,7 @@ function Player:init(args)
   self.base_attack_cooldown_time = 0
   self.base_projectile_speed = self.base_projectile_speed or 160
   self.base_projectile_damage = self.base_projectile_damage or 10
+  self.projectile_spread = self.projectile_spread or math.pi / 60
   self.hit_color = self.hit_color or {1, 1, 1, 1}
   self.hit_duration = 0.12
   self.hit_time = 0
@@ -62,7 +63,8 @@ function Player:fire_bullet(aim_x, aim_y, projectiles, effects)
   if #projectiles >= self.max_projectiles then return end
   if (aim_x - self.x) ^ 2 + (aim_y - self.y) ^ 2 <= 1 then return end
 
-  local r = math.atan2(aim_y - self.y, aim_x - self.x)
+  local aim_r = math.atan2(aim_y - self.y, aim_x - self.x)
+  local r = aim_r + (love.math.random() * 2 - 1) * self.projectile_spread
   local bullet = self.inventory:ensure_current()
   projectiles:add(Projectile{
     x = self.x,

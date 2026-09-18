@@ -34,7 +34,7 @@ function Shop:init(game)
       name = "ARMOR",
       price = 0,
       amount = 1,
-      effect = "HP +5",
+      effect = "HP +4 / MAX +10",
       value = 3,
       color = {218 / 255, 218 / 255, 218 / 255, 1},
     },
@@ -108,7 +108,7 @@ end
 
 function Shop:can_buy(item)
   if item and item.kind == "mark" then
-    return self.items[item] == true and not self.mark_purchased and
+    return self.items[item] == true and not item.sold and
       self.game:is_shop_open() and self.game:has_next_level()
   end
   return self.items[item] == true and not item.sold and
@@ -124,6 +124,7 @@ function Shop:buy(item)
     self.game.enemy_traits[item.key] = self.game.enemy_traits[item.key] + item.amount
     self.mark_purchased = true
     self.selected_mark = item
+    item.sold = true
   else
     return false
   end

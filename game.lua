@@ -210,7 +210,6 @@ function Game:draw_scene()
   else
     self.hud:draw(x, y)
   end
-  if x then graphics.circle(x, y, 1.5, self.colors.foreground) end
   if self.transition then self.transition:draw() end
 end
 

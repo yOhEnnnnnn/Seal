@@ -3,10 +3,10 @@ Arena = Object:extend()
 function Arena:init(game)
   self.game = game
   self.colors = game.colors
-  self.spawn_interval = 0.9
+  self.spawn_interval = math.max(0.6, 0.8 - (game.level - 1) * 0.1)
   self.spawn_timer = self.spawn_interval
   self.next_spawn_side = 1
-  self.max_enemies = 60
+  self.max_enemies = 80
   self.player = Player{
     x = gw / 2,
     y = gh / 2,
@@ -53,7 +53,7 @@ function Arena:add_enemy(x, y, overrides)
   return self.enemies:add(Enemy{
     x = x,
     y = y,
-    max_hp = overrides.max_hp or 10 + armor * 5,
+    max_hp = overrides.max_hp or 10 + math.min(armor * 4, 10),
     hp = overrides.hp,
     v = overrides.v or 21 * (1 + math.min(haste * 0.1, 0.3)),
     damage = overrides.damage or 8,
@@ -139,40 +139,34 @@ function Arena:update(dt)
   end
 end
 
-function Arena:draw_aim_ray(mouse_x, mouse_y)
+function Arena:draw_crosshair(mouse_x, mouse_y)
   if not mouse_x then return end
-  if Bullets[self.game.inventory:get_current()].place then return end
-
-  local dx, dy = mouse_x - self.player.x, mouse_y - self.player.y
-  local length = math.sqrt(dx * dx + dy * dy)
-  if length < 0.001 then return end
-
-  dx, dy = dx / length, dy / length
-  local distance_x = dx > 0 and (gw - self.player.x) / dx or
-    (dx < 0 and -self.player.x / dx or math.huge)
-  local distance_y = dy > 0 and (gh - self.player.y) / dy or
-    (dy < 0 and -self.player.y / dy or math.huge)
-  local ray_length = math.min(distance_x, distance_y)
-  local dash_length, gap_length = 6, 5
-
   love.graphics.push("all")
   local color = self.colors.foreground
-  love.graphics.setColor(color[1], color[2], color[3], 0.4)
-  love.graphics.setLineWidth(2)
-  for distance = self.player.size + 5,
-    ray_length, dash_length + gap_length do
-    local dash_end = math.min(distance + dash_length, ray_length)
-    love.graphics.line(
-      self.player.x + dx * distance,
-      self.player.y + dy * distance,
-      self.player.x + dx * dash_end,
-      self.player.y + dy * dash_end)
-  end
+  love.graphics.setColor(color[1], color[2], color[3], 0.9)
+  love.graphics.setLineWidth(1)
+  local half, corner = 6, 3
+  love.graphics.line(mouse_x - half, mouse_y - half,
+    mouse_x - half + corner, mouse_y - half)
+  love.graphics.line(mouse_x - half, mouse_y - half,
+    mouse_x - half, mouse_y - half + corner)
+  love.graphics.line(mouse_x + half, mouse_y - half,
+    mouse_x + half - corner, mouse_y - half)
+  love.graphics.line(mouse_x + half, mouse_y - half,
+    mouse_x + half, mouse_y - half + corner)
+  love.graphics.line(mouse_x - half, mouse_y + half,
+    mouse_x - half + corner, mouse_y + half)
+  love.graphics.line(mouse_x - half, mouse_y + half,
+    mouse_x - half, mouse_y + half - corner)
+  love.graphics.line(mouse_x + half, mouse_y + half,
+    mouse_x + half - corner, mouse_y + half)
+  love.graphics.line(mouse_x + half, mouse_y + half,
+    mouse_x + half, mouse_y + half - corner)
   love.graphics.pop()
 end
 
 function Arena:draw(mouse_x, mouse_y)
-  self:draw_aim_ray(mouse_x, mouse_y)
+  self:draw_crosshair(mouse_x, mouse_y)
   self.projectiles:draw()
   self.enemies:draw()
   self.player:draw()
