@@ -1,5 +1,5 @@
 levels = {
-  [1] = {target_score = 10},
-  [2] = {target_score = 20},
-  [3] = {target_score = 30},
+  [1] = {target_score = 24},
+  [2] = {target_score = 50},
+  [3] = {target_score = 90},
 }

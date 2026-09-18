@@ -11,6 +11,14 @@ function Game:init()
     gold = {250 / 255, 207 / 255, 0, 1},
     green = {126 / 255, 231 / 255, 135 / 255, 1},
     red = {233 / 255, 29 / 255, 57 / 255, 1},
+    enemy = {233 / 255, 29 / 255, 57 / 255, 1},
+  }
+  self.transition_colors = {
+    {247 / 255, 214 / 255, 218 / 255, 1},
+    {244 / 255, 216 / 255, 206 / 255, 1},
+    {246 / 255, 224 / 255, 208 / 255, 1},
+    {239 / 255, 214 / 255, 222 / 255, 1},
+    {242 / 255, 217 / 255, 210 / 255, 1},
   }
 
   love.graphics.setDefaultFilter("nearest", "nearest")
@@ -30,6 +38,10 @@ function Game:init()
   projectile_attack_sound:setVolume(0.2)
 
   self.canvas = Canvas(gw, gh)
+  self.background_canvas = Canvas(gw, gh)
+  self.scene_canvas = Canvas(gw, gh)
+  self.shadow_canvas = Canvas(gw, gh)
+  self.shadow_shader = love.graphics.newShader("assets/shaders/shadow.frag")
   self.camera = Camera(gw / 2, gh / 2, gw, gh)
   local x, y = gw / 2, gh / 2
   local padding = 16
@@ -39,14 +51,19 @@ function Game:init()
     {x, y, 310, -padding, gw + padding, -padding, gw + padding, 58},
     {x, y, 170, gh + padding, -padding, gh + padding, -padding, 212},
   }
+  self.draw_background_action = function() self:draw_background_scene() end
   self.draw_scene_action = function() self:draw_scene() end
+  self.draw_shadow_action = function() self:draw_shadow() end
+  self.draw_composite_action = function() self:draw_composite() end
   self:reset_run()
 end
 
 function Game:reset_run()
   self.camera:reset()
+  self.transition = nil
+  self.can_extract = false
   self.level, self.score, self.state = 1, 0, "shop"
-  self.coins = 10
+  self.coins = 8
   self.inventory = Inventory()
   self.enemy_traits = {haste = 0, armor = 0, fission = 0}
   self.arena = Arena(self)
@@ -61,10 +78,10 @@ end
 function Game:enemy_killed(enemy)
   if self.state ~= "playing" then return false end
 
-  self:add_coins(1)
+  self:add_coins(enemy and enemy.base_score or 1)
   self.score = self.score + (enemy and (enemy.kill_score or enemy.base_score) or 1)
   if self.score >= self:get_target_score() then
-    self.state = "level_complete"
+    self.can_extract = true
   end
   return true
 end
@@ -92,17 +109,71 @@ end
 function Game:start_next_level()
   if not self:is_shop_open() or not self:has_next_level() then return false end
   if self.state ~= "shop" then self.level = self.level + 1 end
-  self.score, self.state = 0, "playing"
+  self.score, self.state, self.can_extract = 0, "playing", false
   self.shop:reset()
   self.arena = Arena(self)
   self.arena:start()
   return true
 end
 
+function Game:finish_level()
+  if self.state ~= "playing" or not self.can_extract then return false end
+  self.state = "level_complete"
+  return true
+end
+
+function Game:transition_to_shop(x, y)
+  if self.transition or self.state ~= "playing" or
+    not self.can_extract then return false end
+  self.transition = SceneTransition{
+    x = x,
+    y = y,
+    color = self:get_transition_color(),
+    text_color = self.colors.background_dark,
+    font = self.ui_font,
+    text = self.level == #levels and "RUN COMPLETE" or "EXTRACT",
+    transition_action = function() self:finish_level() end,
+  }
+  return true
+end
+
+function Game:get_transition_color()
+  local count = #self.transition_colors
+  local index
+  if self.last_transition_color_index then
+    index = love.math.random(1, count - 1)
+    if index >= self.last_transition_color_index then index = index + 1 end
+  else
+    index = love.math.random(1, count)
+  end
+  self.last_transition_color_index = index
+  return self.transition_colors[index]
+end
+
+function Game:transition_to_next_level(x, y)
+  if self.transition or not self:is_shop_open() or
+    not self:has_next_level() then return false end
+  local target_level = self.state == "shop" and self.level or self.level + 1
+  self.transition = SceneTransition{
+    x = x,
+    y = y,
+    color = self:get_transition_color(),
+    text_color = self.colors.background_dark,
+    font = self.ui_font,
+    text = "LEVEL " .. target_level .. " / " .. #levels,
+    transition_action = function() self:start_next_level() end,
+  }
+  return true
+end
+
 function Game:update(dt)
-  if self.state == "playing" then self.arena:update(dt) end
+  if self.state == "playing" and not self.transition then self.arena:update(dt) end
   if self.state == "playing" then self.camera:update(dt)
   else self.camera:reset() end
+  if self.transition then
+    self.transition:update(dt)
+    if self.transition.dead then self.transition = nil end
+  end
 end
 
 function Game:draw_background()
@@ -115,12 +186,17 @@ function Game:draw_background()
   love.graphics.pop()
 end
 
+function Game:draw_background_scene()
+  self.camera:attach()
+  self:draw_background()
+  self.camera:detach()
+end
+
 function Game:draw_scene()
   local x, y = self.canvas:to_canvas_position(love.mouse.getPosition())
   local world_x, world_y = self.camera:to_world(x, y)
 
   self.camera:attach()
-  self:draw_background()
   if self.state == "playing" then
     self.arena:draw(world_x, world_y)
   end
@@ -135,14 +211,42 @@ function Game:draw_scene()
     self.hud:draw(x, y)
   end
   if x then graphics.circle(x, y, 1.5, self.colors.foreground) end
+  if self.transition then self.transition:draw() end
+end
+
+function Game:draw_shadow()
+  love.graphics.push("all")
+  love.graphics.setShader(self.shadow_shader)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(self.scene_canvas.canvas, 0, 0)
+  love.graphics.pop()
+end
+
+function Game:draw_composite()
+  love.graphics.push("all")
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(self.background_canvas.canvas, 0, 0)
+  love.graphics.draw(self.shadow_canvas.canvas, 1.5, 1.5)
+  love.graphics.draw(self.scene_canvas.canvas, 0, 0)
+  love.graphics.pop()
 end
 
 function Game:draw()
-  self.canvas:draw_to(self.draw_scene_action, self.colors.background)
+  self.background_canvas:draw_to(
+    self.draw_background_action, self.colors.background)
+  self.scene_canvas:draw_to(self.draw_scene_action)
+  self.shadow_canvas:draw_to(self.draw_shadow_action)
+  self.canvas:draw_to(self.draw_composite_action)
   self.canvas:draw_to_window()
 end
 
 function Game:keypressed(key)
+  if key == "escape" then love.event.quit() end
+  if self.transition then return end
+  if key == "p" and self.state == "playing" and self.can_extract then
+    self:transition_to_shop(gw / 2, gh / 2)
+    return
+  end
   if key == "r" and (self.state == "failed" or
     (self:is_level_complete() and not self:has_next_level())) then
     self:reset_run()
@@ -151,10 +255,10 @@ function Game:keypressed(key)
     self.inventory:select_next()
     self.arena.player:sync_bullet_visuals()
   end
-  if key == "escape" then love.event.quit() end
 end
 
 function Game:mousepressed(x, y, button)
+  if self.transition then return end
   if button ~= 1 then return end
   local mouse_x, mouse_y = self.canvas:to_canvas_position(x, y)
   if not mouse_x then return end

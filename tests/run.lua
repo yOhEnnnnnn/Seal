@@ -17,10 +17,13 @@ love = {
     setFont = noop,
     newFont = function() font_loads = font_loads + 1; return font end,
     newCanvas = function() return {setFilter = noop} end,
+    newShader = function(path) return {path = path} end,
     getDimensions = function() return 960, 540 end,
     push = function() stack_depth = stack_depth + 1 end,
     pop = function() stack_depth = stack_depth - 1; assert(stack_depth >= 0) end,
-    setColor = noop, setLineWidth = noop, translate = noop, rotate = noop,
+    setColor = noop, setLineWidth = noop, setShader = noop, draw = noop,
+    getCanvas = noop, setCanvas = noop, origin = noop, clear = noop,
+    translate = noop, rotate = noop,
     scale = noop, rectangle = noop, circle = noop, arc = arc, line = noop, polygon = noop,
     print = record_text, printf = record_text,
   },
@@ -41,11 +44,14 @@ local function near(actual, expected)
   assert(math.abs(actual - expected) < 1e-8, actual .. " ~= " .. expected)
 end
 local function enemy(x, y, r)
-  return Enemy{x = x, y = y, r = r or 0, stationary = true, effects = Group()}
+  return Enemy{x = x, y = y, r = r or 0, max_hp = 12.5, def = 25,
+    stationary = true, effects = Group()}
 end
 
 test("rotated rectangle contact follows its long axis", function()
-  local target = enemy(100, 100, math.pi / 2)
+  local target = Enemy{x = 100, y = 100, r = math.pi / 2,
+    width = 14, height = 6, max_hp = 12.5, def = 25,
+    stationary = true, effects = Group()}
   local player = Player{x = 100, y = 109, inventory = Inventory()}
   assert(target:is_colliding_with_object(player))
   player.x, player.y = 109, 100
@@ -170,7 +176,8 @@ test("opening shop starts at level one and later shops advance", function()
   assert(game:is_shop_open())
   game:start_next_level()
   assert(game.level == 1 and game.state == "playing")
-  for _ = 1, 10 do game:enemy_killed() end
+  for _ = 1, game:get_target_score() do game:enemy_killed() end
+  assert(game.can_extract and game:finish_level())
   game:start_next_level()
   assert(game.level == 2 and game.state == "playing")
 end)
@@ -188,7 +195,7 @@ test("empty ammo fails and R resets without reloading assets", function()
   local loads = font_loads
   game:keypressed("r")
   assert(game:is_shop_open() and game.inventory:get_count() == 30)
-  assert(game.coins == 10 and font_loads == loads)
+  assert(game.coins == 8 and font_loads == loads)
 end)
 
 test("failure waits for the last projectile", function()
@@ -207,14 +214,29 @@ test("last projectile winning kill settles before failure", function()
   game:start_next_level()
   empty_ammo(game)
   game.arena.enemies:clear()
-  game.score = 9
+  game.score = game:get_target_score() - 1
   local target = enemy(100, 100)
   target.hp = 4.5
   game.arena.enemies:add(target)
   game.arena.projectiles:add(Projectile{x = 100, y = 100})
   game:update(0.01)
-  assert(game:is_level_complete() and game.score == 11)
-  assert(game.coins == 11 and #game.arena.projectiles == 0)
+  assert(game.state == "playing" and game.can_extract and game.score == 25)
+  assert(game.coins == 9 and #game.arena.projectiles == 0)
+end)
+
+test("reaching the target keeps combat running until extraction", function()
+  local game = Game()
+  game:start_next_level()
+  game.score = game:get_target_score()
+  game.can_extract = true
+  draw_text = {}
+  game.hud:draw(nil, nil)
+  assert(table.concat(draw_text, "|"):find(
+    "PRESS P TO ENTER SHOP", 1, true))
+  game:keypressed("p")
+  assert(game.state == "playing" and game.transition)
+  game:update(0.86)
+  assert(game:is_level_complete() and game.transition.switched)
 end)
 
 test("dead enemies do not contribute separation forces", function()
@@ -239,6 +261,7 @@ test("shop enforces purchases without UI or platform APIs", function()
     run.inventory.counts[offer.key] == offer.amount)
   assert(not shop:buy(offer))
   assert(shop:buy(shop.marks[1]))
+  assert(shop.mark_purchased)
   assert(run.coins == 100 - offer.price - shop.marks[1].price and
     run.enemy_traits.haste == 1)
   run.coins = 0
@@ -288,8 +311,19 @@ test("screen input routes purchases and NEXT without firing", function()
   assert(offer.sold and #game.arena.projectiles == 0)
   game:mousepressed(120, 188, 1)
   assert(game.coins == 100 - offer.price)
+  assert(game.shop:buy(game.shop.marks[1]))
+  local shop_coins = game.coins
   game:mousepressed(870, 500, 1)
-  assert(game.state == "playing" and game.level == 1)
+  assert(game.state == "shop" and game.transition)
+  game:mousepressed(120, 188, 1)
+  assert(game.coins == shop_coins)
+  game:update(0.84)
+  assert(game.state == "shop" and not game.transition.switched)
+  game:update(0.02)
+  assert(game.state == "playing" and game.level == 1 and
+    game.transition.switched)
+  game:update(0.9)
+  assert(not game.transition)
   assert(#game.arena.projectiles == 0)
   game:keypressed("q")
   assert(game.inventory:get_current() == offer.key)
@@ -298,13 +332,47 @@ test("screen input routes purchases and NEXT without firing", function()
   assert(#game.arena.projectiles + #game.arena.effects > 0)
 end)
 
+test("shop transition expands, switches under cover and reveals arena", function()
+  local game = Game()
+  local button = game.shop.next_button
+  assert(game:transition_to_next_level(
+    button.x + button.width / 2, button.y + button.height / 2))
+  local transition = game.transition
+  assert(not game:transition_to_next_level(0, 0))
+  transition:update(0.25)
+  assert(transition.radius == 0 and transition.text_scale == 0)
+  transition:update(0.3)
+  near(transition.radius, transition.max_radius / 2)
+  assert(transition.text_scale == 1 and game.state == "shop")
+  transition:update(0.3)
+  assert(transition.radius == transition.max_radius and transition.switched)
+  assert(game.state == "playing" and not game.shop.mark_purchased)
+  transition:draw()
+  transition:update(0.3)
+  assert(transition.x == gw / 2 and transition.y == gh / 2)
+  near(transition.radius, transition.max_radius)
+  transition:update(0.6)
+  assert(transition.dead and transition.radius == 0)
+end)
+
+test("shop transition randomly uses five pastel colors without repeats", function()
+  local game = Game()
+  assert(#game.transition_colors == 5)
+  local previous
+  for _ = 1, 20 do
+    local color = game:get_transition_color()
+    assert(color ~= previous)
+    previous = color
+  end
+end)
+
 test("hover and drawing leave catalog and run state unchanged", function()
   local game = Game()
   local item = game.shop.bullets[1]
   game.shop:draw(60, 94)
   assert(game.shop.entries[1][1].hovered)
   assert(item.hovered == nil and item.hover_started_at == nil and item.x == nil)
-  assert(game.coins == 10 and game.inventory:get_count() == 30)
+  assert(game.coins == 8 and game.inventory:get_count() == 30)
   assert(not item.sold)
   game.shop:draw(nil, nil)
   assert(not game.shop.entries[1][1].hovered)
@@ -315,6 +383,11 @@ end)
 
 test("all scene states draw through the extracted views", function()
   local game = Game()
+  assert(game.shadow_shader.path == "assets/shaders/shadow.frag")
+  assert(game.canvas ~= game.background_canvas and
+    game.canvas ~= game.scene_canvas and game.canvas ~= game.shadow_canvas)
+  game:draw()
+  assert(stack_depth == 0)
   game:draw_scene()
   game:start_next_level()
   game:draw_scene()
@@ -337,7 +410,7 @@ test("restart refreshes inventory arena and shop without stale offers", function
   local old_arena = game.arena
   game:fail()
   game:keypressed("r")
-  assert(game.inventory ~= old_inventory and game.coins == 10)
+  assert(game.inventory ~= old_inventory and game.coins == 8)
   assert(game.arena ~= old_arena and game.arena.player.inventory == game.inventory)
   assert(game.shop.game == game and game.hud.game == game)
   assert(not game.shop:buy(old_offer))
@@ -355,8 +428,41 @@ test("player has collision and no enemy steering behavior", function()
   assert(game.arena.player.is_colliding_with_object)
   assert(game.arena.player.seek_point == nil and game.arena.player.hit)
   local target = Enemy{x = 100, y = 100}
+  assert(target.width == 14 and target.height == 6)
+  near(target.color[1], 233 / 255)
+  near(target.color[2], 29 / 255)
+  near(target.color[3], 57 / 255)
+  local rotation = target.r
   target:update(0.01, game.arena.player, {target})
-  assert(target.seek_point and target.hit)
+  assert(target.seek_point and target.hit and target.r ~= rotation)
+end)
+
+test("enemy marks increase risk and score on newly spawned enemies", function()
+  local game = Game()
+  game.enemy_traits = {haste = 1, armor = 1, fission = 1}
+  game.arena = Arena(game)
+  local target = game.arena:add_enemy(100, 100)
+  near(target.max_hp, 15)
+  near(target.v, 25.2)
+  assert(target.damage == 8 and target.def == 0)
+  assert(target.base_score == 7 and target.fission)
+end)
+
+test("fission creates two half-health children without recursive splitting", function()
+  local game = Game()
+  game.state = "playing"
+  game.enemy_traits.fission = 1
+  game.arena = Arena(game)
+  local target = game.arena:add_enemy(100, 100)
+  target:hit(target.hp, Projectile{score_operation = "add", score_value = 1})
+  game.arena.enemies:remove_dead()
+  game.arena:spawn_pending_fissions()
+  assert(#game.arena.enemies == 2 and game.coins == 12 and game.score == 5)
+  for _, child in ipairs(game.arena.enemies) do
+    near(child.max_hp, 5)
+    assert(child.hp == child.max_hp and not child.fission and
+      child.base_score == 1)
+  end
 end)
 
 test("enemy collision damages player and ends the enemy", function()
@@ -398,8 +504,9 @@ test("level transition replaces battle objects but retains run resources", funct
   game.shop:draw(140, 94)
   game:start_next_level()
   local inventory, arena = game.inventory, game.arena
-  for _ = 1, 10 do game:enemy_killed() end
+  for _ = 1, game:get_target_score() do game:enemy_killed() end
   local coins = game.coins
+  assert(game:finish_level())
   assert(game:start_next_level())
   assert(game.level == 2 and game.score == 0)
   assert(game.arena ~= arena and #game.arena.enemies == 4)
@@ -415,23 +522,24 @@ test("normal ammo repeats with doubling prices and no charge on failure", functi
   game.coins = 10
   local item = game.shop.ammo
   assert(game.shop:buy(item))
-  assert(game.coins == 7 and item.price == 6 and game.inventory.counts.normal == 40)
+  assert(game.coins == 8 and item.price == 4 and game.inventory.counts.normal == 40)
   assert(game.shop:buy(item))
-  assert(game.coins == 1 and item.price == 12 and game.inventory.counts.normal == 50)
+  assert(game.coins == 4 and item.price == 8 and game.inventory.counts.normal == 50)
   assert(not item.sold and not game.shop:buy(item))
-  assert(game.coins == 1 and item.price == 12 and game.inventory.counts.normal == 50)
+  assert(game.coins == 4 and item.price == 8 and game.inventory.counts.normal == 50)
 end)
 
 test("supply click does not buy MARK and price resets next shop", function()
   local game = Game()
   local button = game.shop.ammo_button
   game:mousepressed((button.x + 10) * 2, (button.y + 10) * 2, 1)
-  assert(game.inventory.counts.normal == 40 and game.coins == 7)
+  assert(game.inventory.counts.normal == 40 and game.coins == 6)
   assert(game.enemy_traits.haste == 0 and not game.shop.marks[1].sold)
   game:start_next_level()
   assert(not game.shop:buy(game.shop.ammo))
-  for _ = 1, 10 do game:enemy_killed() end
-  assert(game.shop.ammo.price == 3 and game.inventory.counts.normal == 40)
+  for _ = 1, game:get_target_score() do game:enemy_killed() end
+  assert(game:finish_level())
+  assert(game.shop.ammo.price == 2 and game.inventory.counts.normal == 40)
   assert(game.shop:buy(game.shop.ammo))
   game.level, game.state = #levels, "level_complete"
   assert(not game.shop:buy(game.shop.ammo))
@@ -442,19 +550,20 @@ test("normal ammo sells out after five purchases and resets next shop", function
   game.coins = 1000
   local item = game.shop.ammo
   for index = 1, 5 do
-    assert(item.price == 3 * 2 ^ (index - 1))
+    assert(item.price == 2 * 2 ^ (index - 1))
     assert(game.shop:buy(item))
   end
   assert(item.sold and item.purchases == 5)
-  assert(game.coins == 907 and game.inventory.counts.normal == 80)
+  assert(game.coins == 938 and game.inventory.counts.normal == 80)
   assert(not game.shop:buy(item))
-  assert(game.coins == 907 and game.inventory.counts.normal == 80)
+  assert(game.coins == 938 and game.inventory.counts.normal == 80)
   draw_text = {}
   game.shop:draw_ammo(nil, nil)
   assert(table.concat(draw_text, "|"):find("SOLD OUT", 1, true))
   game:start_next_level()
-  for _ = 1, 10 do game:enemy_killed() end
-  assert(not item.sold and item.purchases == 0 and item.price == 3)
+  for _ = 1, game:get_target_score() do game:enemy_killed() end
+  assert(game:finish_level())
+  assert(not item.sold and item.purchases == 0 and item.price == 2)
   assert(game.shop:buy(item) and item.purchases == 1)
 end)
 
@@ -471,9 +580,9 @@ test("kill scoring adds or multiplies the enemy value, not the total", function(
       score_operation = operation, score_value = 2})
     game:update(0.01)
     assert(game.score == (operation == "add" and 107 or 110))
-    assert(game.coins == 11)
+    assert(game.coins == 13)
     game:update(0.01)
-    assert(game.coins == 11)
+    assert(game.coins == 13)
   end
 end)
 
@@ -514,6 +623,16 @@ test("piercing rewards each kill using the original projectile scoring", functio
 end)
 
 test("bullet enum provides isolated projectile defaults", function()
+  local expected_colors = {
+    normal = {255, 255, 255}, pierce = {178, 232, 221},
+    bounce = {255, 209, 102}, chain = {138, 59, 236},
+    ember = {213, 14, 61}, frost = {0, 240, 255},
+  }
+  for key, expected in pairs(expected_colors) do
+    for channel = 1, 3 do
+      near(Bullets[key].color[channel], expected[channel] / 255)
+    end
+  end
   local a = Projectile{bullet = BulletType.PIERCE}
   local b = Projectile{bullet = BulletType.PIERCE}
   assert(a.pierce == 1 and a.score_value == 2)

@@ -5,8 +5,9 @@ function Shop:init(game)
   self.ui_font = game.ui_font
   self.item_font = game.shop_item_font
   self.colors = game.colors
-  self.next_button = {x = gw - 58, y = gh - 30, width = 48, height = 20}
+  self.next_button = {x = gw - 74, y = gh - 30, width = 64, height = 20}
   self.ammo = self:create_bullet_item("normal")
+  self.mark_purchased = false
   self.ammo.purchases = 0
   self.ammo_button = {x = 10, y = 31, width = 180, height = 20}
   self.bullet_catalog = {
@@ -21,9 +22,9 @@ function Shop:init(game)
       kind = "mark",
       key = "haste",
       name = "HASTE",
-      price = 4,
+      price = 0,
       amount = 1,
-      effect = "SPEED X1.5",
+      effect = "SPEED +20%",
       value = 2,
       color = {1, 107 / 255, 107 / 255, 1},
     },
@@ -31,9 +32,9 @@ function Shop:init(game)
       kind = "mark",
       key = "armor",
       name = "ARMOR",
-      price = 4,
+      price = 0,
       amount = 1,
-      effect = "HP +1",
+      effect = "HP +5",
       value = 3,
       color = {218 / 255, 218 / 255, 218 / 255, 1},
     },
@@ -41,7 +42,7 @@ function Shop:init(game)
       kind = "mark",
       key = "fission",
       name = "FISSION",
-      price = 6,
+      price = 0,
       amount = 1,
       effect = "SPLIT X2",
       value = 4,
@@ -95,6 +96,8 @@ function Shop:reset()
   self.ammo.price = Bullets.normal.shop_price
   self.ammo.purchases = 0
   self.ammo.sold = false
+  self.mark_purchased = false
+  self.selected_mark = nil
   for _, item in ipairs(self.bullet_catalog) do item.sold = false end
   for _, item in ipairs(self.marks) do item.sold = false end
   self:roll_bullets()
@@ -104,6 +107,10 @@ function Shop:reset()
 end
 
 function Shop:can_buy(item)
+  if item and item.kind == "mark" then
+    return self.items[item] == true and not self.mark_purchased and
+      self.game:is_shop_open() and self.game:has_next_level()
+  end
   return self.items[item] == true and not item.sold and
     self.game:is_shop_open() and self.game:has_next_level() and
     self.game.coins >= item.price
@@ -115,15 +122,19 @@ function Shop:buy(item)
     if not self.game.inventory:add(item.key, item.amount) then return false end
   elseif item.kind == "mark" and self.game.enemy_traits[item.key] ~= nil then
     self.game.enemy_traits[item.key] = self.game.enemy_traits[item.key] + item.amount
+    self.mark_purchased = true
+    self.selected_mark = item
   else
     return false
   end
-  self.game.coins = self.game.coins - item.price
+  if item.kind == "bullet" then
+    self.game.coins = self.game.coins - item.price
+  end
   if item == self.ammo then
     item.purchases = item.purchases + 1
     item.sold = item.purchases >= Bullets.normal.shop_limit
     item.price = item.price * 2
-  else
+  elseif item.kind == "bullet" then
     item.sold = true
   end
   return true
@@ -309,7 +320,7 @@ function Shop:draw(mouse_x, mouse_y)
   end
 
   graphics.set_color(self.colors.foreground)
-  love.graphics.print("MARK", 10, 160)
+  love.graphics.print("BOUNTY", 10, 160)
   for _, entry in ipairs(self.entries[2]) do
     if self:draw_item(entry, mouse_x, mouse_y) then
       hovered_item = entry.item
@@ -332,8 +343,9 @@ function Shop:mousepressed(x, y)
     end
   end
   if self:is_inside(self.next_button, x, y) then
-    self.game:start_next_level()
-    return true
+    return self.game:transition_to_next_level(
+      self.next_button.x + self.next_button.width / 2,
+      self.next_button.y + self.next_button.height / 2)
   end
   return false
 end

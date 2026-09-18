@@ -8,7 +8,6 @@ function Player:init(args)
   self:init_physics(args)
   self:init_unit(args)
   self.size = self.size or 7
-  self.shadow_color = self.shadow_color or {0, 0, 0, 0.35}
   self.max_projectiles = self.max_projectiles or 64
   self.inventory = assert(args.inventory, "Player requires an ammo inventory")
   self.current_bullet = self.inventory:get_current()
@@ -135,7 +134,6 @@ function Player:draw()
   love.graphics.translate(self.x, self.y)
   local scale = self:get_switch_scale()
   love.graphics.scale(scale, scale)
-  self:draw_rounded_square(1, 1, self.size, self.shadow_color)
   self:draw_rounded_square(0, 0, self.size,
     self.hit_time > 0 and self.hit_color or self.color)
   love.graphics.pop()

@@ -256,3 +256,68 @@ function FrostArea:draw()
       center - math.pi / 8, center + math.pi / 8, line_color, 2)
   end
 end
+
+SceneTransition = Object:extend()
+SceneTransition:implement(GameObject)
+
+function SceneTransition:init(args)
+  self:init_game_object(args)
+  self.time = 0
+  self.radius = 0
+  self.text_scale = 0
+  self.max_radius = 1.2 * gw
+  self.delay = 0.25
+  self.expand_duration = 0.6
+  self.hold_duration = 0.3
+  self.shrink_duration = 0.6
+  self.switched = false
+end
+
+function SceneTransition:update(dt)
+  self.time = self.time + dt
+  local cover_time = self.delay + self.expand_duration
+  local reveal_time = cover_time + self.hold_duration
+  local end_time = reveal_time + self.shrink_duration
+
+  if self.time < self.delay then
+    self.radius = 0
+  elseif self.time < cover_time then
+    self.radius = self.max_radius *
+      (self.time - self.delay) / self.expand_duration
+  elseif self.time < reveal_time then
+    self.radius = self.max_radius
+  else
+    self.x, self.y = gw / 2, gh / 2
+    self.radius = self.max_radius * math.max(0,
+      1 - (self.time - reveal_time) / self.shrink_duration)
+  end
+
+  if not self.switched and self.time >= cover_time then
+    self.switched = true
+    if self.transition_action then self.transition_action() end
+  end
+
+  local text_in_start = self.delay + 0.1
+  if self.time >= text_in_start and self.time < text_in_start + 0.1 then
+    self.text_scale = cubic_in_out((self.time - text_in_start) / 0.1)
+  elseif self.time >= text_in_start and self.time < end_time - 0.05 then
+    self.text_scale = 1
+  elseif self.time >= end_time - 0.05 then
+    self.text_scale = math.max(0, (end_time - self.time) / 0.05)
+  end
+
+  if self.time >= end_time then self.dead = true end
+end
+
+function SceneTransition:draw()
+  graphics.circle(self.x, self.y, self.radius, self.color)
+  if self.text_scale <= 0 then return end
+  love.graphics.push("all")
+  love.graphics.translate(gw / 2, gh / 2)
+  love.graphics.scale(self.text_scale, self.text_scale)
+  love.graphics.setFont(self.font)
+  graphics.set_color(self.text_color)
+  love.graphics.printf(self.text, -gw / 2,
+    -self.font:getHeight() / 2, gw, "center")
+  love.graphics.pop()
+end

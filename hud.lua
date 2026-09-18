@@ -69,6 +69,14 @@ function HUD:draw(mouse_x, mouse_y)
 
   self:draw_health()
   self:draw_bullet_inventory(mouse_x, mouse_y)
+  if self.game.can_extract then
+    graphics.set_color(self.colors.foreground)
+    love.graphics.printf(
+      self.game.level == #levels and
+        "TARGET REACHED - PRESS P TO COMPLETE RUN" or
+        "TARGET REACHED - PRESS P TO ENTER SHOP",
+      0, gh - 25, gw, "center")
+  end
 end
 
 function HUD:draw_health()

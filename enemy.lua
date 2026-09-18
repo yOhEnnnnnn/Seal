@@ -8,12 +8,12 @@ function Enemy:init(args)
   self:init_game_object(args)
   self:init_physics(args)
   self.base_score = self.base_score or 1
-  self.max_hp = self.max_hp or 12.5
+  self.max_hp = self.max_hp or 10
   self:init_unit(args)
   self.hp = self.hp or self.max_hp
   self.v = self.v or self.speed or 21
-  self.damage = self.damage or 4.5
-  self.def = self.def or 25
+  self.damage = self.damage or 8
+  self.def = self.def or 0
   self.width = self.width or 14
   self.height = self.height or 6
   self.color = self.color or {233 / 255, 29 / 255, 57 / 255, 1}

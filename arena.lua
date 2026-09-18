@@ -16,8 +16,9 @@ function Arena:init(game)
   self.projectiles = Group()
   self.effects = Group()
   self.enemies = Group{on_remove = function(enemy)
-    if not enemy.reached_center then game:enemy_killed(enemy) end
+    self:on_enemy_removed(enemy)
   end}
+  self.pending_fissions = {}
 end
 
 function Arena:start()
@@ -39,14 +40,63 @@ function Arena:spawn_enemy(side)
     x, y = love.math.random(18, gw - 18), gh - margin
   end
 
-  self.enemies:add(Enemy{
+  self:add_enemy(x, y)
+end
+
+function Arena:add_enemy(x, y, overrides)
+  if #self.enemies >= self.max_enemies then return end
+  overrides = overrides or {}
+  local traits = self.game.enemy_traits
+  local armor = traits.armor
+  local haste = traits.haste
+  local fission = traits.fission
+  return self.enemies:add(Enemy{
     x = x,
     y = y,
-    color = self.colors.red,
+    max_hp = overrides.max_hp or 10 + armor * 5,
+    hp = overrides.hp,
+    v = overrides.v or 21 * 1.2 ^ haste,
+    damage = overrides.damage or 8,
+    def = 0,
+    base_score = overrides.base_score or
+      1 + haste + armor * 2 + fission * 3,
+    fission = overrides.fission == nil and fission > 0 or overrides.fission,
+    color = self.colors.enemy,
     hit_color = self.colors.foreground,
     hp_bar_background = self.colors.hp_bar_background,
     effects = self.effects,
   })
+end
+
+function Arena:on_enemy_removed(enemy)
+  if enemy.reached_center then return end
+  self.game:enemy_killed(enemy)
+  if enemy.fission and self.game.state == "playing" then
+    self.pending_fissions[#self.pending_fissions + 1] = enemy
+  end
+end
+
+function Arena:spawn_pending_fissions()
+  if self.game.state ~= "playing" then
+    self.pending_fissions = {}
+    return
+  end
+  for _, parent in ipairs(self.pending_fissions) do
+    local child_hp = math.max(1, parent.max_hp / 2)
+    for direction = -1, 1, 2 do
+      self:add_enemy(
+        math.max(9, math.min(gw - 9, parent.x + direction * 5)),
+        math.max(9, math.min(gh - 9, parent.y + direction * 3)), {
+          max_hp = child_hp,
+          hp = child_hp,
+          v = parent.v,
+          damage = parent.damage,
+          base_score = 1,
+          fission = false,
+        })
+    end
+  end
+  self.pending_fissions = {}
 end
 
 function Arena:update_enemy_spawning(dt)
@@ -71,13 +121,14 @@ function Arena:update(dt)
   self.effects:update(dt, self.enemies)
   -- Settle this frame's kills before checking whether ammunition ran out.
   self.enemies:remove_dead()
+  self:spawn_pending_fissions()
 
   local active_attack = false
   for _, effect in ipairs(self.effects) do
     if effect.can_damage then active_attack = true break end
   end
-  if self.game.inventory:get_count() == 0 and #self.projectiles == 0 and
-    not active_attack then
+  if not self.game.can_extract and self.game.inventory:get_count() == 0 and
+    #self.projectiles == 0 and not active_attack then
     self.game:fail()
   end
 

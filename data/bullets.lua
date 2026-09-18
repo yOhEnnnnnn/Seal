@@ -16,13 +16,13 @@ Bullets = {
     score_operation = "add",
     score_value = 1,
     starting_amount = 30,
-    shop_price = 3,
+    shop_price = 2,
     shop_amount = 10,
     shop_limit = 5,
   },
   [BulletType.PIERCE] = {
     name = "PIERCE",
-    color = {1, 93 / 255, 162 / 255, 1},
+    color = {178 / 255, 232 / 255, 221 / 255, 1},
     score_operation = "add",
     score_value = 2,
     pierce = 1,
@@ -31,7 +31,7 @@ Bullets = {
   },
   [BulletType.BOUNCE] = {
     name = "BOUNCE",
-    color = {126 / 255, 231 / 255, 135 / 255, 1},
+    color = {1, 209 / 255, 102 / 255, 1},
     score_operation = "add",
     score_value = 2,
     bounces = 1,
@@ -40,7 +40,7 @@ Bullets = {
   },
   [BulletType.CHAIN] = {
     name = "CHAIN",
-    color = {33 / 255, 199 / 255, 1, 1},
+    color = {138 / 255, 59 / 255, 236 / 255, 1},
     score_operation = "add",
     score_value = 3,
     shop_price = 7,
@@ -64,13 +64,14 @@ Bullets = {
         math.atan2(origin.y - closest.y, origin.x - closest.x), projectile.color)
       projectile.effects:add(ChainLightning{
         x = origin.x, y = origin.y, target_x = closest.x, target_y = closest.y,
+        color = projectile.color,
         effects = projectile.effects,
       })
     end,
   },
   [BulletType.EMBER] = {
     name = "EMBER",
-    color = {240 / 255, 112 / 255, 33 / 255, 1},
+    color = {213 / 255, 14 / 255, 61 / 255, 1},
     score_operation = "add",
     score_value = 3,
     shop_price = 12,
@@ -89,7 +90,7 @@ Bullets = {
   },
   [BulletType.FROST] = {
     name = "FROST",
-    color = {126 / 255, 201 / 255, 231 / 255, 1},
+    color = {0, 240 / 255, 1, 1},
     score_operation = "add",
     score_value = 2,
     shop_price = 10,
