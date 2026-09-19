@@ -7,7 +7,6 @@ local font = {setFilter = noop, getWidth = function(_, s) return #s * 8 end,
 local function new_source()
   return {setVolume = noop, stop = noop, setPitch = noop, play = noop}
 end
-local sound_data = {setSample = noop}
 local draw_text, stack_depth = {}, 0
 local function record_text(value) draw_text[#draw_text + 1] = tostring(value) end
 local function arc(mode, arctype)
@@ -32,7 +31,6 @@ love = {
   },
   mouse = {setVisible = noop, getPosition = function() return 600, 270 end},
   audio = {newSource = function() return new_source() end},
-  sound = {newSoundData = function() return sound_data end},
   math = {random = math.random},
   event = {quit = noop},
   timer = {getTime = function() return 1 end},
