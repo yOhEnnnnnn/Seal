@@ -18,6 +18,7 @@ function Projectile:init(args)
   self.color = self.color or Data.bullets.color
   self.score_bonus = self.score_bonus or Data.bullets.score_bonus
   self.bounces = self.bounces or 0
+  self.hit_enemies = {}
   self.critical_chance = self.critical_chance or 0
   self.luck_chance = self.luck_chance or 0
   self.critical = love.math.random() < self.critical_chance
@@ -35,36 +36,21 @@ end
 
 function Projectile:trigger_lucky_effect(origin, enemies)
   if love.math.random() >= self.luck_chance then return end
-  local effect = love.math.random(1, 3)
-  if effect == 1 then
-    local closest, closest_distance
-    local range_squared = Data.upgrades.luck_chain_range ^ 2
-    for _, enemy in ipairs(enemies) do
-      if enemy ~= origin and not enemy.dead then
-        local dx, dy = enemy.x - origin.x, enemy.y - origin.y
-        local distance = dx * dx + dy * dy
-        if distance <= range_squared and
-          (not closest_distance or distance < closest_distance) then
-          closest, closest_distance = enemy, distance
-        end
-      end
+  local orb_count = 0
+  for _, effect in ipairs(self.effects) do
+    if getmetatable(effect) == LuckyOrb and not effect.dead then
+      orb_count = orb_count + 1
     end
-    if closest then
-      closest:hit(self:get_effect_hit_power(0.6), self)
-      self.effects:add(LuckyChain{
-        x = origin.x, y = origin.y,
-        target_x = closest.x, target_y = closest.y,
-      })
-    end
-  elseif effect == 2 then
-    self.effects:add(LuckyEmber{
-      x = origin.x, y = origin.y,
-      hit_power = self:get_effect_hit_power(0.25),
-      source = self,
-    })
-  else
-    self.effects:add(LuckyFrost{x = origin.x, y = origin.y})
   end
+  if orb_count >= Data.upgrades.luck_orb_limit then return end
+
+  self.effects:add(LuckyOrb{
+    x = origin.x,
+    y = origin.y,
+    r = self.r + (love.math.random() * 2 - 1) * math.pi / 3,
+    hit_power = self:get_effect_hit_power(0.5),
+    source = self,
+  })
 end
 
 function Projectile:get_effect_hit_power(multiplier)
@@ -83,8 +69,9 @@ function Projectile:update(dt, enemies)
       (dy < 0 and (self.radius - self.y) / dy or math.huge)
     local wall_t = math.min(tx, ty)
     local travel = math.max(0, math.min(1, wall_t))
-    self:check_hits(enemies, self.x + dx * travel, self.y + dy * travel)
-    if self.dead or wall_t > 1 then break end
+    local hit_enemy = self:check_hits(
+      enemies, self.x + dx * travel, self.y + dy * travel)
+    if hit_enemy or self.dead or wall_t > 1 then break end
 
     local hit_x, hit_y = tx <= ty, ty <= tx
     self:hit_wall(hit_x, hit_y)
@@ -98,16 +85,8 @@ end
 
 function Projectile:hit_wall(hit_x, hit_y)
   if self.audio then self.audio:play("wall_hit") end
-  if self.bounces <= 0 then
-    self:spawn_wall_impact_particles(hit_x, hit_y)
-    self.dead = true
-    return
-  end
-  if hit_x then self.vx = -self.vx end
-  if hit_y then self.vy = -self.vy end
-  self.r = math.atan2(self.vy, self.vx)
-  self.bounces = self.bounces - 1
-  self.score_bonus = self.score_bonus + Data.bullets.bounce_score_bonus
+  self:spawn_wall_impact_particles(hit_x, hit_y)
+  self.dead = true
 end
 
 function Projectile:spawn_wall_impact_particles(hit_x, hit_y)
@@ -147,7 +126,7 @@ function Projectile:check_hits(enemies, end_x, end_y)
   local start_x, start_y = self.x, self.y
   local nearest, hit_t = nil, math.huge
   for _, enemy in ipairs(enemies) do
-    if not enemy.dead then
+    if not enemy.dead and not self.hit_enemies[enemy] then
       local t = Collision.sweep_circle(start_x, start_y, end_x, end_y,
         self.radius, enemy)
       if t < hit_t then nearest, hit_t = enemy, t end
@@ -161,9 +140,30 @@ function Projectile:check_hits(enemies, end_x, end_y)
   self.x = start_x + (end_x - start_x) * hit_t
   self.y = start_y + (end_y - start_y) * hit_t
   nearest:hit(self.hit_power, self)
+  self.hit_enemies[nearest] = true
   nearest:spawn_hit_particles(self.r + math.pi, self.color)
   self:trigger_lucky_effect(nearest, enemies)
-  self.dead = true
+
+  if self.bounces <= 0 then
+    self.dead = true
+    return true
+  end
+
+  self.bounces = self.bounces - 1
+  self.score_bonus = self.score_bonus + Data.bullets.bounce_score_bonus
+  local normal_x, normal_y = self.x - nearest.x, self.y - nearest.y
+  local normal_length = math.sqrt(normal_x * normal_x + normal_y * normal_y)
+  if normal_length == 0 then
+    normal_x, normal_y, normal_length = -self.vx, -self.vy, self.speed
+  end
+  normal_x, normal_y = normal_x / normal_length, normal_y / normal_length
+  local velocity_dot_normal = self.vx * normal_x + self.vy * normal_y
+  self.vx = self.vx - 2 * velocity_dot_normal * normal_x
+  self.vy = self.vy - 2 * velocity_dot_normal * normal_y
+  self.r = math.atan2(self.vy, self.vx)
+  self.x = self.x + normal_x * 0.01
+  self.y = self.y + normal_y * 0.01
+  return true
 end
 
 function Projectile:draw()

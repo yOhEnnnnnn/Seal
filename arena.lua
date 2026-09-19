@@ -140,31 +140,9 @@ function Arena:update_enemy_spawning(dt)
       EnemyConfig.difficulty_spawn_reduction_per_level))
 end
 
-function Arena:get_nearest_enemy()
-  local player = self.player
-  local nearest, nearest_distance
-  for _, enemy in ipairs(self.enemies) do
-    if not enemy.dead then
-      local dx, dy = enemy.x - player.x, enemy.y - player.y
-      local distance = dx * dx + dy * dy
-      if not nearest_distance or distance < nearest_distance then
-        nearest, nearest_distance = enemy, distance
-      end
-    end
-  end
-  return nearest
-end
-
 function Arena:update(dt, aim_x, aim_y)
   if self.game.state ~= "playing" then return end
   self.player:update(dt)
-  if self.player.auto_attack then
-    local target = self:get_nearest_enemy()
-    if target then
-      self.player:try_attack(
-        target.x, target.y, self.projectiles, self.effects)
-    end
-  end
   self:update_enemy_spawning(dt)
 
   self.enemies:update(dt, self.player, self.enemies)

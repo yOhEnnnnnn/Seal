@@ -2,6 +2,22 @@ Audio = Object:extend()
 
 local pitch_pattern = {-1, 0.35, 1, -0.35, 0}
 
+local function create_tone(settings)
+  local sample_rate = settings.sample_rate or 22050
+  local duration = settings.duration or 0.09
+  local sample_count = math.floor(sample_rate * duration)
+  local sound = love.sound.newSoundData(sample_count, sample_rate, 16, 1)
+
+  for index = 0, sample_count - 1 do
+    local time = index / sample_rate
+    local envelope = (1 - time / duration) ^ 2
+    local wave = math.sin(time * math.pi * 2 * (settings.frequency or 240))
+    sound:setSample(index, wave * envelope * (settings.gain or 0.22))
+  end
+
+  return sound
+end
+
 function Audio:init(config)
   self.config = config or Data.audio
   self.events = {}
@@ -11,11 +27,17 @@ function Audio:init(config)
 end
 
 function Audio:create_event(settings)
-  local paths = settings.paths or {settings.path}
   local event = {voices = {}, next_voice = 1, next_pitch = 1, play_count = 0}
+  local paths = settings.paths or {settings.path}
+  local tone = settings.tone and create_tone(settings.tone)
   for index = 1, settings.voices or 1 do
-    local path = paths[(index - 1) % #paths + 1]
-    local source = love.audio.newSource(path, "static")
+    local source
+    if tone then
+      source = love.audio.newSource(tone, "static")
+    else
+      local path = paths[(index - 1) % #paths + 1]
+      source = love.audio.newSource(path, "static")
+    end
     source:setVolume((settings.volume or 1) * self.config.master_volume)
     event.voices[#event.voices + 1] = source
   end

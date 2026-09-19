@@ -34,7 +34,6 @@ function Player:apply_upgrades(upgrades)
     Data.upgrades.min_attack_interval, Data.player.attack_interval -
       (upgrades.fire_rate or 0) * Data.upgrades.fire_interval_reduction)
   self.bonus_bounces = upgrades.bounce or 0
-  self.auto_attack = upgrades.auto_attack == 1
   self.critical_chance = (upgrades.critical or 0) *
     Data.upgrades.critical_chance_per_level
   self.luck_chance = (upgrades.luck or 0) *

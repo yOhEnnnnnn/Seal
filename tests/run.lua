@@ -31,6 +31,9 @@ love = {
   },
   mouse = {setVisible = noop, getPosition = function() return 600, 270 end},
   audio = {newSource = function() return new_source() end},
+  sound = {newSoundData = function()
+    return {setSample = noop}
+  end},
   math = {random = math.random},
   event = {quit = noop},
   timer = {getTime = function() return 1 end},
@@ -84,24 +87,6 @@ test("sweep handles rotated rectangles and circles", function()
   near(Collision.sweep_circle(-10, 0, 10, 0, 2, circle), 0.25)
 end)
 
-test("bounce preserves remaining frame travel", function()
-  local a = Projectile{x = 470, y = 100, bounces = 1, arena_width = gw}
-  local b = Projectile{x = 470, y = 100, bounces = 1, arena_width = gw}
-  a:update(0.1, {})
-  for _ = 1, 10 do b:update(0.01, {}) end
-  near(a.x, 469)
-  near(a.x, b.x)
-  assert(a.vx < 0 and a.bounces == 0 and not a.dead)
-end)
-
-test("bounce can hit an enemy on the return path in the same frame", function()
-  local target = enemy(450, 100)
-  local bullet = Projectile{x = 470, y = 100, bounces = 1, arena_width = gw}
-  bullet:update(0.2, {target})
-  assert(target.hits_remaining == 1)
-  assert(bullet.dead)
-end)
-
 test("wall stops hits beyond the arena and handles long frames", function()
   local outside = enemy(500, 100)
   local bullet = Projectile{x = 470, y = 100, arena_width = gw}
@@ -109,10 +94,6 @@ test("wall stops hits beyond the arena and handles long frames", function()
   assert(outside.hits_remaining == 2)
   near(bullet.x, gw - bullet.radius)
   assert(bullet.dead)
-  local bounce = Projectile{x = 240, y = 100, bounces = 1}
-  bounce:update(10, {})
-  assert(bounce.dead and bounce.bounces == 0)
-  near(bounce.x, bounce.radius)
 end)
 
 test("attacks use infinite ammunition", function()
@@ -264,37 +245,19 @@ test("sidebar upgrades apply immediately during an endless run", function()
   assert(game.arena.player.bonus_bounces == 1)
   assert(game.sidebar:buy(shop_card(game, "fire_rate")))
   near(game.arena.player.base_attack_interval, 0.09)
-  assert(game.sidebar:buy(shop_card(game, "auto_attack")))
-  assert(game.arena.player.auto_attack)
   assert(game.arena.player.base_projectile_hit_power == 2 and
     game.arena.player.bonus_bounces == 1 and
-    game.arena.player.auto_attack and
     game.arena.player.critical_chance == 0.05 and
     game.arena.player.luck_chance == 0.03)
 end)
 
 test("sidebar rejects unaffordable and capped upgrades", function()
   local game = Game()
-  local auto = shop_card(game, "auto_attack")
-  assert(not game.sidebar:buy(auto))
-  game.coins = 100
-  assert(game.sidebar:buy(auto))
+  local bounce = shop_card(game, "bounce")
+  assert(not game.sidebar:buy(bounce))
+  game.upgrades.bounce = bounce.max
   local coins = game.coins
-  assert(not game.sidebar:buy(auto) and game.coins == coins)
-end)
-
-test("auto fire targets the nearest living enemy without mouse input", function()
-  local game = Game()
-  game.arena.enemies:clear()
-  local far = game.arena:add_enemy(20, 20)
-  local near_target = game.arena:add_enemy(
-    game.arena.player.x + 20, game.arena.player.y)
-  game.arena.player.auto_attack = true
-  game.arena:update(0.01)
-  assert(#game.arena.projectiles == 1)
-  local shot = game.arena.projectiles[1]
-  assert(shot.vx > 0 and math.abs(shot.vy) < shot.speed * 0.1)
-  assert(game.arena:get_nearest_enemy() == near_target and far ~= near_target)
+  assert(not game.sidebar:buy(bounce) and game.coins == coins)
 end)
 
 test("all scene states draw through the extracted views", function()
@@ -484,7 +447,7 @@ test("ordinary kill scoring and coins settle once", function()
   assert(game.score == 106 and game.coins == 13)
 end)
 
-test("bounce upgrades affect infinite-ammo shots", function()
+test("bounce upgrades reflect shots off enemies", function()
   local game = Game()
   game.coins = 100
   assert(game.sidebar:buy(shop_card(game, "bounce")))
@@ -493,13 +456,17 @@ test("bounce upgrades affect infinite-ammo shots", function()
   assert(player:try_attack(300, player.y, game.arena.projectiles, game.arena.effects))
   local shot = game.arena.projectiles[1]
   assert(shot.bounces == 1)
-  shot:update(1.1, {})
-  assert(shot.bounces == 0 and shot.vx < 0 and not shot.dead)
+  local first = enemy(player.x + 20, player.y)
+  local second = enemy(player.x - 20, player.y)
+  first.hits_remaining = 1
+  second.hits_remaining = 1
+  shot:update(0.1, {first, second})
+  assert(first.dead and shot.bounces == 0 and not shot.dead)
+  assert(shot.vx < 0 and math.abs(shot.vy) < shot.speed * 0.1)
   assert(shot.score_bonus == 2 and Data.bullets.score_bonus == 1)
-  local target = enemy(shot.x - 10, shot.y)
-  target.hits_remaining = 1
-  shot:update(0.1, {target})
-  assert(target.dead and target.kill_score == target.base_score + 2)
+  shot:update(0.2, {first, second})
+  assert(second.dead and shot.dead)
+  assert(second.kill_score == second.base_score + 2)
 end)
 
 test("gold gain upgrades multiply kill income", function()
@@ -520,27 +487,17 @@ test("critical shots count as double hit power", function()
     shot.visual_height == Data.player.projectile_height * 1.25)
 end)
 
-test("luck can trigger chain ember and frost effects", function()
-  local original_random = love.math.random
-  for choice = 1, 3 do
-    love.math.random = function(minimum, maximum)
-      if minimum then return choice end
-      return 0
-    end
-    local effects = Group()
-    local shot = Projectile{x = 0, y = 0, luck_chance = 1, effects = effects}
-    local origin, neighbor = enemy(10, 0), enemy(20, 0)
-    shot:trigger_lucky_effect(origin, {origin, neighbor})
-    if choice == 1 then
-      assert(#effects == 1 and getmetatable(effects[1]) == LuckyChain)
-      assert(neighbor.hits_remaining < neighbor.max_hits)
-    elseif choice == 2 then
-      assert(#effects == 1 and getmetatable(effects[1]) == LuckyEmber)
-    else
-      assert(#effects == 1 and getmetatable(effects[1]) == LuckyFrost)
-    end
-  end
-  love.math.random = original_random
+test("luck creates at most five persistent bouncing orbs", function()
+  local effects = Group()
+  local shot = Projectile{x = 0, y = 0, luck_chance = 1, effects = effects}
+  local origin = enemy(100, 100)
+  for _ = 1, 8 do shot:trigger_lucky_effect(origin, {origin}) end
+  assert(#effects == Data.upgrades.luck_orb_limit)
+  local orb = effects[1]
+  assert(getmetatable(orb) == LuckyOrb and not orb.duration)
+  orb.x, orb.vx = aw - orb.radius, math.abs(orb.vx)
+  orb:update(0.1, {})
+  assert(orb.vx < 0 and not orb.dead)
 end)
 
 print(passed .. " tests passed")

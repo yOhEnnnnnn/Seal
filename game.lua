@@ -46,7 +46,6 @@ function Game:reset_run()
     hit_power = 0,
     bounce = 0,
     fire_rate = 0,
-    auto_attack = 0,
   }
   self.enemy_traits = {haste = 0, armor = 0, fission = 0}
   self.arena = Arena(self)

@@ -62,78 +62,57 @@ function HitCircle:draw()
   graphics.circle(self.x, self.y, self.radius, self.color)
 end
 
-LuckyChain = Object:extend()
-LuckyChain:implement(GameObject)
+LuckyOrb = Object:extend()
+LuckyOrb:implement(GameObject)
 
-function LuckyChain:init(args)
+function LuckyOrb:init(args)
   self:init_game_object(args)
-  self.time = 0
-  self.duration = 0.16
+  self.radius = Data.upgrades.luck_orb_radius
+  self.speed = Data.upgrades.luck_orb_speed
+  self.vx = math.cos(self.r) * self.speed
+  self.vy = math.sin(self.r) * self.speed
+  self.rotation = 0
+  self.rotation_speed = (love.math.random() < 0.5 and -1 or 1) *
+    (0.7 + love.math.random() * 0.5)
+  self.touching_enemies = {}
 end
 
-function LuckyChain:update(dt)
-  self.time = self.time + dt
-  if self.time >= self.duration then self.dead = true end
-end
+function LuckyOrb:update(dt, enemies)
+  self.rotation = self.rotation + self.rotation_speed * dt
+  self.x = self.x + self.vx * dt
+  self.y = self.y + self.vy * dt
+  if self.x <= self.radius or self.x >= aw - self.radius then
+    self.x = math.max(self.radius, math.min(aw - self.radius, self.x))
+    self.vx = self.x == self.radius and math.abs(self.vx) or -math.abs(self.vx)
+  end
+  if self.y <= self.radius or self.y >= ah - self.radius then
+    self.y = math.max(self.radius, math.min(ah - self.radius, self.y))
+    self.vy = self.y == self.radius and math.abs(self.vy) or -math.abs(self.vy)
+  end
 
-function LuckyChain:draw()
-  graphics.line(self.x, self.y, self.target_x, self.target_y,
-    {138 / 255, 59 / 255, 236 / 255, 1}, 2)
-end
-
-LuckyEmber = Object:extend()
-LuckyEmber:implement(GameObject)
-
-function LuckyEmber:init(args)
-  self:init_game_object(args)
-  self.time, self.tick = 0, 0
-  self.duration = Data.upgrades.luck_area_duration
-  self.size = Data.upgrades.luck_area_size
-  self.can_damage = true
-end
-
-function LuckyEmber:update(dt, enemies)
-  self.time = self.time + dt
-  self.tick = self.tick - dt
-  if self.tick <= 0 then
-    self.tick = 0.4
-    for _, enemy in ipairs(enemies) do
-      if not enemy.dead and math.abs(enemy.x - self.x) <= self.size / 2 and
-        math.abs(enemy.y - self.y) <= self.size / 2 then
+  local touching_enemies = {}
+  for _, enemy in ipairs(enemies) do
+    if not enemy.dead and Collision.sweep_circle(
+      self.x, self.y, self.x, self.y, self.radius, enemy) < math.huge then
+      touching_enemies[enemy] = true
+      if not self.touching_enemies[enemy] then
         enemy:hit(self.hit_power, self.source)
       end
     end
   end
-  if self.time >= self.duration then self.dead = true end
+  self.touching_enemies = touching_enemies
 end
 
-function LuckyEmber:draw()
-  graphics.rectangle(self.x, self.y, self.size, self.size, 2, 2,
-    {213 / 255, 14 / 255, 61 / 255, 0.28})
-end
-
-LuckyFrost = Object:extend()
-LuckyFrost:implement(GameObject)
-
-function LuckyFrost:init(args)
-  self:init_game_object(args)
-  self.time = 0
-  self.duration = Data.upgrades.luck_area_duration
-  self.radius = Data.upgrades.luck_area_size / 2
-end
-
-function LuckyFrost:update(dt, enemies)
-  self.time = self.time + dt
-  for _, enemy in ipairs(enemies) do
-    local dx, dy = enemy.x - self.x, enemy.y - self.y
-    if not enemy.dead and dx * dx + dy * dy <= self.radius ^ 2 then
-      enemy:slow(Data.upgrades.luck_frost_slow, 0.12)
-    end
+function LuckyOrb:draw()
+  local blue = {0, 240 / 255, 1, 1}
+  love.graphics.push("all")
+  love.graphics.translate(self.x, self.y)
+  love.graphics.rotate(self.rotation)
+  graphics.circle(0, 0, self.radius, {0, 240 / 255, 1, 0.08})
+  for index = 0, 3 do
+    local center = index * math.pi / 2 + math.pi / 4
+    graphics.arc("open", 0, 0, self.radius,
+      center - math.pi / 8, center + math.pi / 8, blue, 2)
   end
-  if self.time >= self.duration then self.dead = true end
-end
-
-function LuckyFrost:draw()
-  graphics.circle(self.x, self.y, self.radius,
-    {0, 240 / 255, 1, 0.22})
+  love.graphics.pop()
 end
