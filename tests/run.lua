@@ -124,38 +124,30 @@ test("attacks use infinite ammunition", function()
   assert(#shots == 2)
 end)
 
-test("six audio events play from their owning game actions", function()
+test("game actions stay silent when audio events are unconfigured", function()
   local game = Game()
   local audio = game.audio
   for _, name in ipairs({"attack", "enemy_hit", "enemy_death",
       "wall_hit", "player_hit", "purchase"}) do
-    assert(audio.events[name] and audio.events[name].play_count == 0)
+    assert(audio.events[name] == nil and not audio:play(name))
   end
 
   game.arena.player:update(1)
   assert(game.arena.player:try_attack(300, 135,
     game.arena.projectiles, game.arena.effects))
-  assert(audio.events.attack.play_count == 1)
 
   local target = game.arena:add_enemy(100, 100, {
     max_hits = 2, hits_remaining = 2,
   })
   target:hit(1)
-  assert(audio.events.enemy_hit.play_count == 1 and
-    audio.events.enemy_death.play_count == 0)
   target:hit(1)
-  assert(audio.events.enemy_hit.play_count == 1 and
-    audio.events.enemy_death.play_count == 1)
 
   local shot = Projectile{x = aw - 3, y = 100, audio = audio}
   shot:update(0.1, {})
-  assert(audio.events.wall_hit.play_count == 1)
 
   game.arena.player:hit(1)
-  assert(audio.events.player_hit.play_count == 1)
   game.coins = 100
   assert(game.sidebar:buy(game.sidebar.cards[1]))
-  assert(audio.events.purchase.play_count == 1)
 end)
 
 test("compaction preserves survivors and removes each death once", function()
