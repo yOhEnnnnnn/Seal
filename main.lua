@@ -1,4 +1,6 @@
-gw, gh = 480, 270
+Data = require("data")
+gw, gh = Data.display.width, Data.display.height
+aw, ah = Data.display.arena_width, Data.display.arena_height
 
 require("engine.object")
 require("engine.math.spring")
@@ -12,17 +14,14 @@ require("engine.game.physics")
 require("engine.game.steering")
 require("engine.game.unit")
 
-require("data.levels")
-require("data.bullets")
 
 require("effect")
 require("projectile")
 require("enemy")
 require("player")
-require("inventory")
 require("hud")
 require("arena")
-require("shop")
+require("sidebar")
 require("game")
 
 function love.load()

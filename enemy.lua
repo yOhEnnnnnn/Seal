@@ -1,65 +1,56 @@
 Enemy = Object:extend()
 Enemy:implement(GameObject)
 Enemy:implement(Physics)
-Enemy:implement(Steering)
 Enemy:implement(Unit)
 
 function Enemy:init(args)
   self:init_game_object(args)
   self:init_physics(args)
-  self.base_score = self.base_score or 1
-  self.max_hp = self.max_hp or 10
+  self.base_score = self.base_score or EnemyConfig.base_score
+  self.max_hp = self.max_hp or EnemyConfig.max_hp
   self:init_unit(args)
   self.hp = self.hp or self.max_hp
-  self.v = self.v or self.speed or 21
-  self.damage = self.damage or 8
+  self.v = self.v or self.speed or EnemyConfig.move_speed
+  self.damage = self.damage or EnemyConfig.damage
   self.def = self.def or 0
-  self.width = self.width or 14
-  self.height = self.height or 6
-  self.color = self.color or {233 / 255, 29 / 255, 57 / 255, 1}
+  self.width = self.width or EnemyConfig.width
+  self.height = self.height or EnemyConfig.height
+  self.color = self.color or {1, 1, 1, 1}
   self.hit_color = self.hit_color or {1, 1, 1, 1}
-  self.hp_bar_background = self.hp_bar_background or {32 / 255, 32 / 255, 32 / 255, 1}
   self.effects = self.effects or Group()
   self.invincible = self.invincible or false
   self.stationary = self.stationary or false
   self.hit_spring = Spring(1)
-  self.hit_duration = 0.15
+  self.hit_duration = EnemyConfig.hit_duration
   self.hit_time = 0
-  self.hp_bar_time = 0
-  self.slow_time = 0
-  self.slow_multiplier = 1
   self:set_as_rectangle(self.width, self.height, "dynamic", "enemy")
-  self:set_as_steerable(self.v, 2000, 4 * math.pi, 4)
 end
 
 function Enemy:update(dt, player, enemies)
   if self.dead then return end
-  self.slow_time = math.max(self.slow_time - dt, 0)
-  if self.slow_time == 0 then self.slow_multiplier = 1 end
-  self.max_v = self.v * self.slow_multiplier
-  self.max_speed = self.max_v
+  local speed = self.v
+  self.max_v = speed
+  self.max_speed = speed
   self.hit_spring:update(dt)
   self.hit_time = math.max(self.hit_time - dt, 0)
-  self.hp_bar_time = math.max(self.hp_bar_time - dt, 0)
   if self.stationary then
     self:stop()
   else
-    self:seek_point(player.x, player.y)
-    self:wander(50, 100, 20, dt)
-    self:steering_separate(16, enemies)
-    self:update_steering(dt)
-    self:rotate_towards_velocity(dt)
+    local dx, dy = player.x - self.x, player.y - self.y
+    local distance = math.sqrt(dx * dx + dy * dy)
+    if distance > 0 then
+      self.r = math.atan2(dy, dx)
+      self:set_velocity(dx / distance * speed, dy / distance * speed)
+    else
+      self:stop()
+    end
+    self:update_physics(dt)
   end
   if self:is_colliding_with_object(player) then
     player:hit(self.damage)
     self.reached_center = true
     self.dead = true
   end
-end
-
-function Enemy:slow(multiplier, duration)
-  self.slow_multiplier = math.min(self.slow_multiplier, multiplier)
-  self.slow_time = math.max(self.slow_time, duration)
 end
 
 function Enemy:spawn_hit_particles(r, impact_color)
@@ -92,23 +83,10 @@ function Enemy:hit(damage, projectile)
   if self.dead then return end
   self.hit_spring:pull(0.25, 200, 10)
   self.hit_time = self.hit_duration
-  self.hp_bar_time = 2
   if self.invincible then return end
   Unit.hit(self, damage * 100 / (100 + self.def))
   if self.dead then
-    self.killed_by = projectile
-    if projectile then
-      projectile.kill_count = (projectile.kill_count or 0) + 1
-      self.kill_sequence = projectile.kill_count
-    end
-    self.kill_score = self.base_score
-    if projectile then
-      if projectile.score_operation == "multiply" then
-        self.kill_score = self.base_score * projectile.score_value
-      else
-        self.kill_score = self.base_score + projectile.score_value
-      end
-    end
+    self.kill_score = self.base_score + (projectile and projectile.score_bonus or 0)
   end
 end
 
@@ -130,31 +108,36 @@ function Enemy:on_death()
   })
 end
 
-function Enemy:get_color()
-  return self.hit_time > 0 and self.hit_color or self.color
+function Enemy:get_health_alpha()
+  local health = math.max(0, math.min(self.hp / self.max_hp, 1))
+  local minimum = EnemyConfig.min_health_alpha
+  return minimum + health ^ EnemyConfig.health_alpha_exponent * (1 - minimum)
 end
 
-function Enemy:draw_hp_bar()
-  if self.hp_bar_time == 0 then return end
+function Enemy:get_color()
+  local color = self.hit_time > 0 and self.hit_color or self.color
+  return graphics.color_with_alpha(color, self:get_health_alpha())
+end
 
-  love.graphics.push("all")
-  love.graphics.translate(self.x, self.y)
-  love.graphics.scale(self.hit_spring.x, self.hit_spring.x)
-  graphics.line(-self.width / 2, -self.height,
-    self.width / 2, -self.height, self.hp_bar_background, 2)
-  graphics.line(-self.width / 2, -self.height,
-    -self.width / 2 + self.width * self.hp / self.max_hp,
-    -self.height, self:get_color(), 2)
-  love.graphics.pop()
+function Enemy:get_depth_color()
+  return {0.48, 0.49, 0.47, self:get_health_alpha() * 0.8}
 end
 
 function Enemy:draw()
   if self.dead then return end
   love.graphics.push("all")
+  love.graphics.translate(self.x + EnemyConfig.depth_offset,
+    self.y + EnemyConfig.depth_offset)
+  love.graphics.rotate(self.r)
+  love.graphics.scale(self.hit_spring.x, self.hit_spring.x)
+  graphics.rectangle(0, 0, self.width, self.height, 1, 1,
+    self:get_depth_color())
+  love.graphics.pop()
+
+  love.graphics.push("all")
   love.graphics.translate(self.x, self.y)
   love.graphics.rotate(self.r)
   love.graphics.scale(self.hit_spring.x, self.hit_spring.x)
-  graphics.rectangle(0, 0, self.width, self.height, 3, 3, self:get_color())
+  graphics.rectangle(0, 0, self.width, self.height, 1, 1, self:get_color())
   love.graphics.pop()
-  self:draw_hp_bar()
 end

@@ -1,48 +1,31 @@
 Game = Object:extend()
 
 function Game:init()
-  self.colors = {
-    background = {43 / 255, 46 / 255, 46 / 255, 1},
-    background_dark = {41 / 255, 44 / 255, 44 / 255, 1},
-    background_light = {48 / 255, 51 / 255, 51 / 255, 1},
-    shop_selected = {35 / 255, 38 / 255, 38 / 255, 1},
-    hp_bar_background = {12 / 255, 14 / 255, 15 / 255, 1},
-    foreground = {218 / 255, 218 / 255, 218 / 255, 1},
-    gold = {250 / 255, 207 / 255, 0, 1},
-    green = {126 / 255, 231 / 255, 135 / 255, 1},
-    red = {233 / 255, 29 / 255, 57 / 255, 1},
-    enemy = {233 / 255, 29 / 255, 57 / 255, 1},
-  }
-  self.transition_colors = {
-    {247 / 255, 214 / 255, 218 / 255, 1},
-    {244 / 255, 216 / 255, 206 / 255, 1},
-    {246 / 255, 224 / 255, 208 / 255, 1},
-    {239 / 255, 214 / 255, 222 / 255, 1},
-    {242 / 255, 217 / 255, 210 / 255, 1},
-  }
+  self.colors = Data.theme.colors
+  self.transition_colors = Data.theme.transition_colors
 
   love.graphics.setDefaultFilter("nearest", "nearest")
   love.graphics.setBackgroundColor(0, 0, 0, 1)
   love.graphics.setLineStyle("rough")
   love.mouse.setVisible(false)
 
-  self.ui_font = love.graphics.newFont("assets/fonts/BoiledPasta.ttf", 16)
+  self.ui_font = love.graphics.newFont(Data.display.ui_font, Data.display.ui_font_size)
   self.ui_font:setFilter("nearest", "nearest")
-  self.shop_item_font = love.graphics.newFont(
-    "assets/fonts/PixulBrush.ttf", 8)
-  self.shop_item_font:setFilter("nearest", "nearest")
+  self.small_font = love.graphics.newFont(
+    Data.display.small_font, Data.display.small_font_size)
+  self.small_font:setFilter("nearest", "nearest")
   love.graphics.setFont(self.ui_font)
 
   projectile_attack_sound = love.audio.newSource(
-    "assets/sounds/projectile_attack.wav", "static")
-  projectile_attack_sound:setVolume(0.2)
+    Data.display.attack_sound, "static")
+  projectile_attack_sound:setVolume(Data.display.attack_volume)
 
   self.canvas = Canvas(gw, gh)
   self.background_canvas = Canvas(gw, gh)
   self.scene_canvas = Canvas(gw, gh)
   self.shadow_canvas = Canvas(gw, gh)
   self.shadow_shader = love.graphics.newShader("assets/shaders/shadow.frag")
-  self.camera = Camera(gw / 2, gh / 2, gw, gh)
+  self.camera = Camera(aw / 2, ah / 2, aw, ah)
   local x, y = gw / 2, gh / 2
   local padding = 16
   self.background_polygons = {
@@ -69,13 +52,22 @@ function Game:reset_run()
   self.danger_time = 0
   self.gold_fraction = 0
   self.secured_coins = nil
-  self.level, self.score, self.state = 1, 0, "shop"
-  self.coins = 8
-  self.inventory = Inventory()
+  self.level, self.score, self.state = 1, 0, "playing"
+  self.coins = Data.rules.starting_coins
+  self.upgrades = {
+    gold_gain = 0,
+    critical = 0,
+    luck = 0,
+    damage = 0,
+    bounce = 0,
+    fire_rate = 0,
+    auto_attack = 0,
+  }
   self.enemy_traits = {haste = 0, armor = 0, fission = 0}
   self.arena = Arena(self)
   self.hud = HUD(self)
-  self.shop = Shop(self)
+  self.sidebar = Sidebar(self)
+  self.arena:start()
 end
 
 function Game:get_target_score()
@@ -89,19 +81,16 @@ function Game:enemy_killed(enemy)
   local kill_score = enemy and (enemy.kill_score or base_score) or 1
   self.score = self.score + math.floor(
     kill_score * self.combo_multiplier + 0.5)
-  local source = enemy and enemy.killed_by
-  local combo_gain = 0.1
-  if source and source.bullet == BulletType.PIERCE and
-    enemy.kill_sequence > 1 then combo_gain = 0.2 end
-  self.combo_multiplier = math.min(3, self.combo_multiplier + combo_gain)
+  local combo = Data.rules.combo
+  self.combo_multiplier = math.min(combo.max_multiplier, self.combo_multiplier + combo.gain)
   self.combo_pulse = 1
-  self.combo_timer = 1.5 + math.min(self.enemy_traits.haste * 0.15, 0.45)
-  if source and source.bullet == BulletType.EMBER then
-    self.combo_timer = math.max(self.combo_timer, 2.5)
-  end
+  self.combo_timer = combo.duration + math.min(
+    self.enemy_traits.haste * combo.haste_duration_bonus, combo.max_haste_duration_bonus)
 
-  self.gold_fraction = self.gold_fraction +
-    base_score * (1 + self.danger_level * 0.15)
+  local gold_multiplier = 1 +
+    self.upgrades.gold_gain * Data.upgrades.gold_bonus_per_level
+  self.gold_fraction = self.gold_fraction + base_score * gold_multiplier *
+    (1 + self.danger_level * Data.rules.danger.gold_bonus_per_level)
   local gold = math.floor(self.gold_fraction)
   self.gold_fraction = self.gold_fraction - gold
   self:add_coins(gold)
@@ -117,10 +106,6 @@ function Game:is_level_complete()
   return self.state == "level_complete"
 end
 
-function Game:is_shop_open()
-  return self.state == "shop" or self:is_level_complete()
-end
-
 function Game:fail()
   if self.state ~= "playing" then return end
   if self.can_extract and self.secured_coins then
@@ -130,7 +115,7 @@ function Game:fail()
 end
 
 function Game:has_next_level()
-  return self.state == "shop" or levels[self.level + 1] ~= nil
+  return levels[self.level + 1] ~= nil
 end
 
 function Game:add_coins(amount)
@@ -138,13 +123,12 @@ function Game:add_coins(amount)
 end
 
 function Game:start_next_level()
-  if not self:is_shop_open() or not self:has_next_level() then return false end
-  if self.state ~= "shop" then self.level = self.level + 1 end
+  if not self:is_level_complete() or not self:has_next_level() then return false end
+  self.level = self.level + 1
   self.score, self.state, self.can_extract = 0, "playing", false
   self.combo_multiplier, self.combo_timer, self.combo_pulse = 1, 0, 0
   self.danger_level, self.danger_time = 0, 0
   self.gold_fraction, self.secured_coins = 0, nil
-  self.shop:reset()
   self.arena = Arena(self)
   self.arena:start()
   return true
@@ -153,10 +137,13 @@ end
 function Game:finish_level()
   if self.state ~= "playing" or not self.can_extract then return false end
   self.state = "level_complete"
+  self.arena.enemies:clear()
+  self.arena.projectiles:clear()
+  self.arena.effects:clear()
   return true
 end
 
-function Game:transition_to_shop(x, y)
+function Game:transition_to_next_level(x, y)
   if self.transition or self.state ~= "playing" or
     not self.can_extract then return false end
   self.transition = SceneTransition{
@@ -165,8 +152,12 @@ function Game:transition_to_shop(x, y)
     color = self:get_transition_color(),
     text_color = self.colors.background_dark,
     font = self.ui_font,
-    text = self.level == #levels and "RUN COMPLETE" or "EXTRACT",
-    transition_action = function() self:finish_level() end,
+    text = self.level == #levels and "RUN COMPLETE" or
+      "LEVEL " .. (self.level + 1) .. " / " .. #levels,
+    transition_action = function()
+      self:finish_level()
+      if self:has_next_level() then self:start_next_level() end
+    end,
   }
   return true
 end
@@ -184,34 +175,31 @@ function Game:get_transition_color()
   return self.transition_colors[index]
 end
 
-function Game:transition_to_next_level(x, y)
-  if self.transition or not self:is_shop_open() or
-    not self:has_next_level() then return false end
-  local target_level = self.state == "shop" and self.level or self.level + 1
-  self.transition = SceneTransition{
-    x = x,
-    y = y,
-    color = self:get_transition_color(),
-    text_color = self.colors.background_dark,
-    font = self.ui_font,
-    text = "LEVEL " .. target_level .. " / " .. #levels,
-    transition_action = function() self:start_next_level() end,
-  }
-  return true
+function Game:update_mouse_cursor()
+  local mouse_x = self.canvas:to_canvas_position(love.mouse.getPosition())
+  love.mouse.setVisible(not mouse_x or mouse_x > aw)
 end
 
 function Game:update(dt)
+  self:update_mouse_cursor()
   if self.state == "playing" and not self.transition then
     self.combo_timer = math.max(self.combo_timer - dt, 0)
-    self.combo_pulse = math.max(self.combo_pulse - dt / 0.18, 0)
+    self.combo_pulse = math.max(self.combo_pulse - dt / Data.rules.combo.pulse_duration, 0)
     if self.combo_timer == 0 then
-      self.combo_multiplier = math.max(1, self.combo_multiplier - dt * 1.5)
+      self.combo_multiplier = math.max(1, self.combo_multiplier - dt * Data.rules.combo.decay_per_second)
     end
     if self.can_extract then
       self.danger_time = self.danger_time + dt
-      self.danger_level = math.min(5, math.floor(self.danger_time / 10))
+      self.danger_level = math.min(Data.rules.danger.max_level,
+        math.floor(self.danger_time / Data.rules.danger.seconds_per_level))
     end
-    self.arena:update(dt)
+    local screen_x, screen_y = self.canvas:to_canvas_position(
+      love.mouse.getPosition())
+    local aim_x, aim_y
+    if screen_x and screen_x <= aw then
+      aim_x, aim_y = self.camera:to_world(screen_x, screen_y)
+    end
+    self.arena:update(dt, aim_x, aim_y)
   end
   if self.state == "playing" then self.camera:update(dt)
   else self.camera:reset() end
@@ -232,9 +220,7 @@ function Game:draw_background()
 end
 
 function Game:draw_background_scene()
-  self.camera:attach()
   self:draw_background()
-  self.camera:detach()
 end
 
 function Game:draw_scene()
@@ -242,19 +228,17 @@ function Game:draw_scene()
   local world_x, world_y = self.camera:to_world(x, y)
 
   self.camera:attach()
-  if self.state == "playing" then
-    self.arena:draw(world_x, world_y)
+  if self.state ~= "failed" then
+    self.arena:draw(x and x <= aw and world_x or nil, world_y)
   end
   self.camera:detach()
 
   if self.state == "failed" then
     self.hud:draw_failure()
-  elseif self:is_shop_open() then
-    self.shop:draw(x, y)
-    self.hud:draw_bullet_inventory(x, y)
   else
     self.hud:draw(x, y)
   end
+  self.sidebar:draw(x, y)
   if self.transition then self.transition:draw() end
 end
 
@@ -288,16 +272,12 @@ function Game:keypressed(key)
   if key == "escape" then love.event.quit() end
   if self.transition then return end
   if key == "p" and self.state == "playing" and self.can_extract then
-    self:transition_to_shop(gw / 2, gh / 2)
+    self:transition_to_next_level(aw / 2, ah / 2)
     return
   end
   if key == "r" and (self.state == "failed" or
     (self:is_level_complete() and not self:has_next_level())) then
     self:reset_run()
-  end
-  if key == "q" and self.state == "playing" then
-    self.inventory:select_next()
-    self.arena.player:sync_bullet_visuals()
   end
 end
 
@@ -306,9 +286,11 @@ function Game:mousepressed(x, y, button)
   if button ~= 1 then return end
   local mouse_x, mouse_y = self.canvas:to_canvas_position(x, y)
   if not mouse_x then return end
-  if self:is_shop_open() then
-    self.shop:mousepressed(mouse_x, mouse_y)
-  elseif self.state == "playing" then
+  if self.state == "playing" then
+    if mouse_x > aw then
+      self.sidebar:mousepressed(mouse_x, mouse_y)
+      return
+    end
     local world_x, world_y = self.camera:to_world(mouse_x, mouse_y)
     self.arena:mousepressed(world_x, world_y)
   end

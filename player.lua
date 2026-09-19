@@ -6,56 +6,52 @@ Player:implement(Unit)
 function Player:init(args)
   self:init_game_object(args)
   self:init_physics(args)
+  self.max_hp = self.max_hp or Data.player.max_hp
   self:init_unit(args)
-  self.size = self.size or 7
-  self.max_projectiles = self.max_projectiles or 64
-  self.inventory = assert(args.inventory, "Player requires an ammo inventory")
-  self.current_bullet = self.inventory:get_current()
-  self.color = Bullets[self.current_bullet].color
-  self.switch_duration, self.switch_time = 0.22, 0
+  self.size = self.size or Data.player.size
+  self.max_projectiles = self.max_projectiles or Data.player.max_projectiles
+  self.color = Data.bullets.color
   self.camera = args.camera
-  self.base_attack_interval = self.base_attack_interval or 0.10
+  self.base_attack_interval = self.base_attack_interval or Data.player.attack_interval
   self.base_attack_cooldown_time = 0
-  self.base_projectile_speed = self.base_projectile_speed or 160
-  self.base_projectile_damage = self.base_projectile_damage or 10
-  self.projectile_spread = self.projectile_spread or math.pi / 60
+  self.base_projectile_speed = self.base_projectile_speed or Data.player.projectile_speed
+  self.base_projectile_damage = self.base_projectile_damage or Data.player.projectile_damage
+  self.projectile_spread = self.projectile_spread or Data.player.projectile_spread
+  self:apply_upgrades(args.upgrades or {})
   self.hit_color = self.hit_color or {1, 1, 1, 1}
-  self.hit_duration = 0.12
+  self.hit_duration = Data.player.hit_duration
   self.hit_time = 0
   self:set_as_rectangle(self.size, self.size, "dynamic", "player")
 end
 
+function Player:apply_upgrades(upgrades)
+  self.base_projectile_damage = Data.player.projectile_damage +
+    (upgrades.damage or 0) * Data.upgrades.damage_per_level
+  self.base_projectile_speed = Data.player.projectile_speed
+  self.base_attack_interval = math.max(
+    Data.upgrades.min_attack_interval, Data.player.attack_interval -
+      (upgrades.fire_rate or 0) * Data.upgrades.fire_interval_reduction)
+  self.bonus_bounces = upgrades.bounce or 0
+  self.auto_attack = upgrades.auto_attack == 1
+  self.critical_chance = (upgrades.critical or 0) *
+    Data.upgrades.critical_chance_per_level
+  self.luck_chance = (upgrades.luck or 0) *
+    Data.upgrades.luck_chance_per_level
+end
+
 function Player:update(dt)
-  self.x, self.y = gw / 2, gh / 2
+  self.x, self.y = aw / 2, ah / 2
   self:stop()
-  self.switch_time = math.max(self.switch_time - dt, 0)
-  self:sync_bullet_visuals()
   self.hit_time = math.max(self.hit_time - dt, 0)
   self.base_attack_cooldown_time = math.max(
     self.base_attack_cooldown_time - dt, 0)
-end
-
-function Player:sync_bullet_visuals()
-  local bullet = self.inventory:get_current()
-  if bullet == self.current_bullet then return end
-  self.current_bullet = bullet
-  self.color = Bullets[bullet].color
-  self.switch_time = self.switch_duration
-end
-
-function Player:get_switch_scale()
-  if self.switch_time == 0 then return 1 end
-  local progress = 1 - self.switch_time / self.switch_duration
-  if progress < 0.25 then return 1 - progress end
-  if progress < 0.6 then return 0.75 + (progress - 0.25) / 0.35 * 0.4 end
-  return 1 + 0.15 * (1 - (progress - 0.6) / 0.4) ^ 2
 end
 
 function Player:hit(damage)
   if self.dead then return end
   self.hit_time = self.hit_duration
   Unit.hit(self, damage)
-  if self.camera then self.camera:spring_shake(4, 0) end
+  if self.camera then self.camera:spring_shake(Data.player.hit_shake, 0) end
 end
 
 function Player:fire_bullet(aim_x, aim_y, projectiles, effects)
@@ -65,17 +61,18 @@ function Player:fire_bullet(aim_x, aim_y, projectiles, effects)
 
   local aim_r = math.atan2(aim_y - self.y, aim_x - self.x)
   local r = aim_r + (love.math.random() * 2 - 1) * self.projectile_spread
-  local bullet = self.inventory:ensure_current()
   projectiles:add(Projectile{
     x = self.x,
     y = self.y,
     r = r,
     speed = self.base_projectile_speed,
     damage = self.base_projectile_damage,
-    bullet = bullet,
-    score_operation = self.inventory.scoring[bullet].operation,
-    score_value = self.inventory.scoring[bullet].value,
+    bounces = self.bonus_bounces,
+    critical_chance = self.critical_chance,
+    luck_chance = self.luck_chance,
     effects = effects,
+    arena_width = aw,
+    arena_height = ah,
   })
   self.base_attack_cooldown_time = self.base_attack_interval
 
@@ -87,41 +84,11 @@ function Player:fire_bullet(aim_x, aim_y, projectiles, effects)
   return true, r
 end
 
-function Player:place_bullet(aim_x, aim_y, effects, bullet)
-  if self.base_attack_cooldown_time > 0 then return end
-  local definition = Bullets[bullet]
-  local scoring = self.inventory.scoring[bullet]
-  local r = math.atan2(aim_y - self.y, aim_x - self.x)
-  definition.place{
-    x = aim_x,
-    y = aim_y,
-    bullet = bullet,
-    color = definition.color,
-    score_operation = scoring.operation,
-    score_value = scoring.value,
-    damage = self.base_projectile_damage,
-    effects = effects,
-  }
-  self.base_attack_cooldown_time = self.base_attack_interval
-  return true, r
-end
-
 function Player:try_attack(aim_x, aim_y, projectiles, effects)
   if not aim_x or not aim_y then return end
-  local current_bullet = self.inventory:ensure_current()
-  if self.inventory.counts[current_bullet] <= 0 then return end
-
-  local definition = Bullets[current_bullet]
-  local fired, angle
-  if definition.place then
-    fired, angle = self:place_bullet(aim_x, aim_y, effects, current_bullet)
-  else
-    fired, angle = self:fire_bullet(aim_x, aim_y, projectiles, effects)
-  end
+  local fired, angle = self:fire_bullet(aim_x, aim_y, projectiles, effects)
   if fired then
-    self.inventory:consume()
-    self:sync_bullet_visuals()
-    if self.camera then self.camera:spring_shake(2, angle) end
+    if self.camera then self.camera:spring_shake(Data.player.attack_shake, angle) end
   end
   return fired
 end
@@ -134,8 +101,6 @@ end
 function Player:draw()
   love.graphics.push("all")
   love.graphics.translate(self.x, self.y)
-  local scale = self:get_switch_scale()
-  love.graphics.scale(scale, scale)
   self:draw_rounded_square(0, 0, self.size,
     self.hit_time > 0 and self.hit_color or self.color)
   love.graphics.pop()

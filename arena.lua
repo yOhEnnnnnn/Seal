@@ -3,15 +3,16 @@ Arena = Object:extend()
 function Arena:init(game)
   self.game = game
   self.colors = game.colors
-  self.spawn_interval = math.max(0.6, 0.8 - (game.level - 1) * 0.1)
+  self.spawn_interval = EnemyConfig.spawn_intervals[game.level] or
+    EnemyConfig.spawn_intervals[#EnemyConfig.spawn_intervals]
   self.spawn_timer = self.spawn_interval
   self.next_spawn_side = 1
-  self.max_enemies = 80
+  self.max_enemies = EnemyConfig.max_enemies
   self.player = Player{
-    x = gw / 2,
-    y = gh / 2,
-    inventory = game.inventory,
+    x = aw / 2,
+    y = ah / 2,
     camera = game.camera,
+    upgrades = game.upgrades,
   }
   self.projectiles = Group()
   self.effects = Group()
@@ -22,22 +23,25 @@ function Arena:init(game)
 end
 
 function Arena:start()
-  for side = 1, 4 do self:spawn_enemy(side) end
+  for _ = 1, EnemyConfig.initial_per_side do
+    for side = 1, 4 do self:spawn_enemy(side) end
+  end
 end
 
 function Arena:spawn_enemy(side)
   if #self.enemies >= self.max_enemies then return end
 
-  local margin = 9
+  local margin = EnemyConfig.spawn_margin
+  local corner = EnemyConfig.spawn_corner_margin
   local x, y
   if side == 1 then
-    x, y = margin, love.math.random(18, gh - 18)
+    x, y = margin, love.math.random(corner, ah - corner)
   elseif side == 2 then
-    x, y = gw - margin, love.math.random(18, gh - 18)
+    x, y = aw - margin, love.math.random(corner, ah - corner)
   elseif side == 3 then
-    x, y = love.math.random(18, gw - 18), margin
+    x, y = love.math.random(corner, aw - corner), margin
   else
-    x, y = love.math.random(18, gw - 18), gh - margin
+    x, y = love.math.random(corner, aw - corner), ah - margin
   end
 
   self:add_enemy(x, y)
@@ -53,17 +57,20 @@ function Arena:add_enemy(x, y, overrides)
   return self.enemies:add(Enemy{
     x = x,
     y = y,
-    max_hp = overrides.max_hp or 10 + math.min(armor * 4, 10),
+    max_hp = overrides.max_hp or EnemyConfig.max_hp +
+      math.min(armor * EnemyConfig.armor_hp_per_level, EnemyConfig.armor_max_hp_bonus),
     hp = overrides.hp,
-    v = overrides.v or 21 * (1 + math.min(haste * 0.1, 0.3)),
-    damage = overrides.damage or 8,
+    v = overrides.v or EnemyConfig.move_speed *
+      (1 + math.min(haste * EnemyConfig.haste_per_level,
+        EnemyConfig.haste_max_bonus)),
+    damage = overrides.damage or EnemyConfig.damage,
     def = 0,
     base_score = overrides.base_score or
-      1 + haste + armor * 2 + fission * 3,
+      EnemyConfig.base_score + haste * EnemyConfig.haste_score +
+      armor * EnemyConfig.armor_score + fission * EnemyConfig.fission_score,
     fission = overrides.fission == nil and fission > 0 or overrides.fission,
     color = self.colors.enemy,
     hit_color = self.colors.foreground,
-    hp_bar_background = self.colors.hp_bar_background,
     effects = self.effects,
   })
 end
@@ -81,17 +88,20 @@ function Arena:spawn_pending_fissions()
     self.pending_fissions = {}
     return
   end
+  local margin = EnemyConfig.spawn_margin
   for _, parent in ipairs(self.pending_fissions) do
-    local child_hp = math.max(1, parent.max_hp / 2)
+    local child_hp = math.max(1, parent.max_hp * EnemyConfig.fission_hp_ratio)
     for direction = -1, 1, 2 do
       self:add_enemy(
-        math.max(9, math.min(gw - 9, parent.x + direction * 5)),
-        math.max(9, math.min(gh - 9, parent.y + direction * 3)), {
+        math.max(margin, math.min(aw - margin,
+          parent.x + direction * EnemyConfig.fission_offset_x)),
+        math.max(margin, math.min(ah - margin,
+          parent.y + direction * EnemyConfig.fission_offset_y)), {
           max_hp = child_hp,
           hp = child_hp,
           v = parent.v,
           damage = parent.damage,
-          base_score = 1,
+          base_score = EnemyConfig.base_score,
           fission = false,
         })
     end
@@ -108,30 +118,42 @@ function Arena:update_enemy_spawning(dt)
   self:spawn_enemy(self.next_spawn_side)
   self.next_spawn_side = self.next_spawn_side % 4 + 1
   self.spawn_timer = self.spawn_interval *
-    (1 - self.game.danger_level * 0.1)
+    (1 - self.game.danger_level * Data.rules.danger.spawn_reduction_per_level)
 end
 
-function Arena:update(dt)
+function Arena:get_nearest_enemy()
+  local player = self.player
+  local nearest, nearest_distance
+  for _, enemy in ipairs(self.enemies) do
+    if not enemy.dead then
+      local dx, dy = enemy.x - player.x, enemy.y - player.y
+      local distance = dx * dx + dy * dy
+      if not nearest_distance or distance < nearest_distance then
+        nearest, nearest_distance = enemy, distance
+      end
+    end
+  end
+  return nearest
+end
+
+function Arena:update(dt, aim_x, aim_y)
   if self.game.state ~= "playing" then return end
   self.player:update(dt)
+  if self.player.auto_attack then
+    local target = self:get_nearest_enemy()
+    if target then
+      self.player:try_attack(
+        target.x, target.y, self.projectiles, self.effects)
+    end
+  end
   self:update_enemy_spawning(dt)
 
   self.enemies:update(dt, self.player, self.enemies)
   if self.player.dead then self.game:fail() end
   self.projectiles:update(dt, self.enemies)
   self.effects:update(dt, self.enemies)
-  -- Settle this frame's kills before checking whether ammunition ran out.
   self.enemies:remove_dead()
   self:spawn_pending_fissions()
-
-  local active_attack = false
-  for _, effect in ipairs(self.effects) do
-    if effect.can_damage then active_attack = true break end
-  end
-  if not self.game.can_extract and self.game.inventory:get_count() == 0 and
-    #self.projectiles == 0 and not active_attack then
-    self.game:fail()
-  end
 
   if self.game.state ~= "playing" then
     self.enemies:clear()
