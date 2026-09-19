@@ -23,7 +23,9 @@ love = {
     getDimensions = function() return 960, 540 end,
     push = function() stack_depth = stack_depth + 1 end,
     pop = function() stack_depth = stack_depth - 1; assert(stack_depth >= 0) end,
-    setColor = noop, setLineWidth = noop, setShader = noop, draw = noop,
+    setColor = noop, setLineWidth = function(value)
+      assert(type(value) == "number")
+    end, setShader = noop, draw = noop,
     getCanvas = noop, setCanvas = noop, origin = noop, clear = noop,
     translate = noop, rotate = noop,
     scale = noop, rectangle = noop, circle = noop, arc = arc, line = noop, polygon = noop,
@@ -147,6 +149,9 @@ end)
 test("an endless run starts in combat without level targets", function()
   local game = Game()
   assert(game.state == "playing" and #game.arena.enemies == 4)
+  for _, target in ipairs(game.arena.enemies) do
+    assert(target.x < 0 or target.x > aw or target.y < 0 or target.y > ah)
+  end
   assert(game.elapsed_time == 0 and game.difficulty_level == 0)
   assert(game.level == nil and game.get_target_score == nil)
   game:enemy_killed()
@@ -273,7 +278,7 @@ test("all scene states draw through the extracted views", function()
   game:update(Data.rules.death_transition_duration)
   draw_text = {}
   game:draw_scene()
-  assert(table.concat(draw_text, "|"):find("PLAYER DESTROYED", 1, true))
+  assert(table.concat(draw_text, "|"):find("YOU DIED...", 1, true))
 end)
 
 test("paid revive preserves the run and spends increasing coins", function()
@@ -308,6 +313,29 @@ test("enemies face one edge toward the player and move straight", function()
     game.arena.player.y - y, game.arena.player.x - x))
   near(target.vx / target.vy,
     (game.arena.player.x - x) / (game.arena.player.y - y))
+end)
+
+test("enemy separation prevents square stacking", function()
+  local game = Game()
+  game.arena.enemies:clear()
+  game.arena.spawn_timer = 100
+  local first = game.arena:add_enemy(60, 60, {v = 0})
+  local second = game.arena:add_enemy(60, 60, {v = 0})
+  game.arena:update(0)
+  local dx, dy = second.x - first.x, second.y - first.y
+  local minimum = first:get_separation_radius() +
+    second:get_separation_radius()
+  near(math.sqrt(dx * dx + dy * dy), minimum)
+end)
+
+test("rear enemies cannot push the front enemy toward the player", function()
+  local game = Game()
+  game.arena.enemies:clear()
+  game.arena.spawn_timer = 100
+  local front = game.arena:add_enemy(100, game.arena.player.y, {v = 0})
+  local rear = game.arena:add_enemy(85, game.arena.player.y, {v = 0})
+  game.arena:update(0)
+  assert(front.x == 100 and rear.x < 85)
 end)
 
 test("enemy remaining hits are represented by opacity", function()
@@ -467,17 +495,28 @@ test("player death fails the battle", function()
   assert(game.state == "revive")
 end)
 
-test("death wave reaches and pushes enemies by distance", function()
+test("death transition freezes enemies before showing the result", function()
   local game = Game()
-  local player = game.arena.player
   game.arena.enemies:clear()
-  local close_enemy = game.arena:add_enemy(player.x + 30, player.y)
-  local far_enemy = game.arena:add_enemy(player.x + 200, player.y)
-  local close_x = close_enemy.x
+  local target = game.arena:add_enemy(40, 40)
+  local x, y = target.x, target.y
   game:fail()
-  game:update(0.1)
-  assert(close_enemy.death_wave_hit and close_enemy.x > close_x)
-  assert(not far_enemy.death_wave_hit)
+  game:update(Data.rules.death_transition_duration * 0.6)
+  assert(target.x == x and target.y == y and game.state == "dying")
+  draw_text = {}
+  game:draw_scene()
+  assert(table.concat(draw_text, "|"):find("YOU DIED...", 1, true))
+end)
+
+test("death tiles sweep diagonally from bottom left", function()
+  local game = Game()
+  local hud = game.hud
+  assert(hud:get_death_tile_scale(0.2, 0) > 0)
+  assert(hud:get_death_tile_scale(0.2, 1) == 0)
+  assert(hud:get_death_tile_scale(0.5, 0) == 1)
+  assert(hud:get_death_tile_scale(0.5, 1) == 1)
+  assert(hud:get_death_tile_scale(0.8, 0) < 1)
+  assert(hud:get_death_tile_scale(0.8, 1) == 1)
 end)
 
 test("revive clears nearby enemies without awarding score", function()

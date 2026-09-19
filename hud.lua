@@ -67,24 +67,42 @@ function HUD:draw_health()
     "HP: " .. math.ceil(player.hp) .. " / " .. player.max_hp, 10, 40)
 end
 
+function HUD:get_death_tile_scale(progress, order)
+  local covering = progress < 0.52
+  local phase = covering and
+    math.max(0, math.min((progress - 0.04) / 0.44, 1)) or
+    math.max(0, math.min((progress - 0.56) / 0.44, 1))
+  local amount = math.max(0, math.min((phase - order * 0.72) / 0.28, 1))
+  local eased = amount * amount * (3 - 2 * amount)
+  return covering and eased or 1 - eased
+end
+
 function HUD:draw_death_transition(progress)
-  local radius = progress * Data.rules.death_transition_duration *
-    Data.rules.death_wave_speed
-  local alpha = math.max(0, 1 - progress * 1.35)
-  for index = 0, 2 do
-    local ring_radius = math.max(0, radius - index * 11)
-    graphics.circle(aw / 2, ah / 2, ring_radius,
-      {1, 1, 1, alpha * (0.34 - index * 0.08)}, 2 - index * 0.35)
+  local size = 20
+  local columns = math.ceil(gw / size)
+  local rows = math.ceil(gh / size)
+  for row = 1, rows do
+    for column = 1, columns do
+      local diagonal = ((column - 1) / (columns - 1) +
+        (rows - row) / (rows - 1)) / 2
+      local scale = self:get_death_tile_scale(progress, diagonal)
+      if scale > 0 then
+        local x = (column - 0.5) * size
+        local y = (row - 0.5) * size
+        graphics.rectangle(x, y, (size + 1) * scale, (size + 1) * scale,
+          nil, nil, self.colors.enemy)
+      end
+    end
   end
-  graphics.circle(aw / 2, ah / 2, 8 + progress * 28,
-    {1, 1, 1, math.max(0, 0.22 - progress * 0.3)})
 end
 
 function HUD:draw_revive(cost)
+  love.graphics.push("all")
   graphics.rectangle(aw / 2, ah / 2, aw, ah, nil, nil,
-    {0, 0, 0, 0.68})
+    {0, 0, 0, 0.62})
+  love.graphics.setFont(self.ui_font)
   graphics.set_color(self.colors.foreground)
-  love.graphics.printf("PLAYER DESTROYED", 0, ah / 2 - 42, aw, "center")
+  love.graphics.printf("YOU DIED...", 0, ah / 2 - 42, aw, "center")
   love.graphics.printf("SCORE " .. self.game.score .. "  " ..
     self:format_time(), 0, ah / 2 - 18, aw, "center")
   local affordable = self.game.coins >= cost
@@ -93,10 +111,11 @@ function HUD:draw_revive(cost)
     affordable and self.colors.background_light or self.colors.background)
   graphics.rectangle(aw / 2, Data.rules.revive_button_y,
     Data.rules.revive_button_width, Data.rules.revive_button_height, 2, 2,
-    nil, affordable and self.colors.foreground or
+    affordable and self.colors.foreground or
       graphics.color_with_alpha(self.colors.foreground, 0.35), 1)
   graphics.set_color(affordable and self.colors.gold or
     graphics.color_with_alpha(self.colors.foreground, 0.4))
   love.graphics.printf(affordable and "REVIVE  $" .. cost or
     "R  RESTART", 0, Data.rules.revive_button_y - 6, aw, "center")
+  love.graphics.pop()
 end

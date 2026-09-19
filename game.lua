@@ -92,7 +92,6 @@ function Game:fail()
   if self.state ~= "playing" then return end
   self.state = "dying"
   self.death_transition_time = 0
-  self.arena:start_death_wave()
 end
 
 function Game:get_revive_cost()
@@ -143,7 +142,6 @@ function Game:update(dt)
     self.death_transition_time = math.min(
       self.death_transition_time + dt,
       Data.rules.death_transition_duration)
-    self.arena:update_death_wave(dt)
     if self.death_transition_time == Data.rules.death_transition_duration then
       self.state = "revive"
     end
@@ -170,15 +168,19 @@ function Game:draw_scene()
     world_y)
   self.camera:detach()
 
+  local death_progress = self.death_transition_time /
+    Data.rules.death_transition_duration
   if self.state == "playing" then
     self.hud:draw(x, y)
-  elseif self.state == "dying" then
-    self.hud:draw_death_transition(
-      self.death_transition_time / Data.rules.death_transition_duration)
+  elseif self.state == "dying" and death_progress >= 0.5 then
+    self.hud:draw_revive(self:get_revive_cost())
   elseif self.state == "revive" then
     self.hud:draw_revive(self:get_revive_cost())
   end
   self.sidebar:draw(x, y)
+  if self.state == "dying" then
+    self.hud:draw_death_transition(death_progress)
+  end
 end
 
 function Game:draw_shadow()

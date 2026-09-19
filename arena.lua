@@ -31,17 +31,17 @@ end
 function Arena:spawn_enemy(side)
   if #self.enemies >= self.max_enemies then return end
 
-  local margin = EnemyConfig.spawn_margin
+  local outside = EnemyConfig.spawn_outside_margin
   local corner = EnemyConfig.spawn_corner_margin
   local x, y
   if side == 1 then
-    x, y = margin, love.math.random(corner, ah - corner)
+    x, y = -outside, love.math.random(corner, ah - corner)
   elseif side == 2 then
-    x, y = aw - margin, love.math.random(corner, ah - corner)
+    x, y = aw + outside, love.math.random(corner, ah - corner)
   elseif side == 3 then
-    x, y = love.math.random(corner, aw - corner), margin
+    x, y = love.math.random(corner, aw - corner), -outside
   else
-    x, y = love.math.random(corner, aw - corner), ah - margin
+    x, y = love.math.random(corner, aw - corner), ah + outside
   end
 
   self:add_enemy(x, y)
@@ -120,18 +120,18 @@ end
 function Arena:spawn_boss(level)
   level = level or 1
   local side = love.math.random(1, 4)
-  local margin = math.max(
-    EnemyConfig.spawn_margin, EnemyConfig.boss_size / 2 + 1)
+  local outside = math.max(
+    EnemyConfig.spawn_outside_margin, EnemyConfig.boss_size / 2 + 4)
   local corner = EnemyConfig.spawn_corner_margin
   local x, y
   if side == 1 then
-    x, y = margin, love.math.random(corner, ah - corner)
+    x, y = -outside, love.math.random(corner, ah - corner)
   elseif side == 2 then
-    x, y = aw - margin, love.math.random(corner, ah - corner)
+    x, y = aw + outside, love.math.random(corner, ah - corner)
   elseif side == 3 then
-    x, y = love.math.random(corner, aw - corner), margin
+    x, y = love.math.random(corner, aw - corner), -outside
   else
-    x, y = love.math.random(corner, aw - corner), ah - margin
+    x, y = love.math.random(corner, aw - corner), ah + outside
   end
 
   local boss_growth = level - 1
@@ -239,6 +239,7 @@ function Arena:update(dt, aim_x, aim_y)
   self:update_enemy_spawning(dt)
 
   self.enemies:update(dt, self.player, self.enemies)
+  self:separate_enemies()
   if self.player.dead then self.game:fail() end
   self.projectiles:update(dt, self.enemies)
   self.effects:update(dt, self.enemies)
@@ -248,21 +249,15 @@ function Arena:update(dt, aim_x, aim_y)
 
 end
 
-function Arena:start_death_wave()
-  self.death_wave_radius = 0
-end
-
-function Arena:update_death_wave(dt)
-  self.death_wave_radius = self.death_wave_radius +
-    Data.rules.death_wave_speed * dt
-  local player = self.player
-  for _, enemy in ipairs(self.enemies) do
-    local dx, dy = enemy.x - player.x, enemy.y - player.y
-    local distance = math.sqrt(dx * dx + dy * dy)
-    if not enemy.death_wave_hit and distance <= self.death_wave_radius then
-      enemy:hit_by_death_wave(dx, dy, distance)
+function Arena:separate_enemies()
+  for _ = 1, EnemyConfig.separation_iterations do
+    for first_index = 1, #self.enemies - 1 do
+      local first = self.enemies[first_index]
+      for second_index = first_index + 1, #self.enemies do
+        first:separate_from(self.enemies[second_index],
+          self.player.x, self.player.y)
+      end
     end
-    enemy:update_death_wave(dt)
   end
 end
 
@@ -331,7 +326,7 @@ function Arena:draw(mouse_x, mouse_y)
   self:draw_crosshair(mouse_x, mouse_y)
   self.projectiles:draw()
   self.enemies:draw()
-  self.player:draw()
+  if not self.player.dead then self.player:draw() end
   self.effects:draw()
 end
 

@@ -1,5 +1,6 @@
 EnemyConfig = {
   spawn_margin = 9,
+  spawn_outside_margin = 12,
   spawn_corner_margin = 18,
   armor_hits_per_level = 1,
   armor_max_hits_bonus = 3,
@@ -13,6 +14,8 @@ EnemyConfig = {
   hit_duration = 0.15,
   width = 16,
   height = 16,
+  separation_padding = 2,
+  separation_iterations = 4,
   max_hits = 3,
   contact_damage = 8,
   move_speed = 4,
