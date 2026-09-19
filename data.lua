@@ -1,9 +1,8 @@
 -- 统一配置入口；运行状态仍由各游戏对象单独保存。
-require("data.levels")
 require("data.enemies")
 
 return {
-  levels = levels,
+  audio = require("data.audio"),
   bullets = require("data.bullets"),
   enemies = EnemyConfig,
   player = require("data.player"),

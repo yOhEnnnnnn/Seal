@@ -24,6 +24,7 @@ function Sidebar:buy(card)
   self.game.coins = self.game.coins - price
   upgrades[card.key] = upgrades[card.key] + 1
   self.game.arena.player:apply_upgrades(upgrades)
+  self.game.audio:play("purchase")
   return true
 end
 
@@ -31,8 +32,8 @@ function Sidebar:draw_header()
   love.graphics.setFont(self.font)
   graphics.set_color(self.colors.foreground)
   love.graphics.print("$" .. self.game.coins, aw + 10, 9)
-  love.graphics.printf("BOSS " .. self.game.score .. "/" ..
-    self.game:get_target_score(), aw + 55, 9, gw - aw - 65, "right")
+  love.graphics.printf("SCORE " .. self.game.score,
+    aw + 55, 9, gw - aw - 65, "right")
 end
 
 function Sidebar:draw_card(card, index, mouse_x, mouse_y)

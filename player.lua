@@ -12,10 +12,12 @@ function Player:init(args)
   self.max_projectiles = self.max_projectiles or Data.player.max_projectiles
   self.color = Data.bullets.color
   self.camera = args.camera
+  self.audio = args.audio
   self.base_attack_interval = self.base_attack_interval or Data.player.attack_interval
   self.base_attack_cooldown_time = 0
   self.base_projectile_speed = self.base_projectile_speed or Data.player.projectile_speed
-  self.base_projectile_damage = self.base_projectile_damage or Data.player.projectile_damage
+  self.base_projectile_hit_power = self.base_projectile_hit_power or
+    Data.player.projectile_hit_power
   self.projectile_spread = self.projectile_spread or Data.player.projectile_spread
   self:apply_upgrades(args.upgrades or {})
   self.hit_color = self.hit_color or {1, 1, 1, 1}
@@ -25,8 +27,8 @@ function Player:init(args)
 end
 
 function Player:apply_upgrades(upgrades)
-  self.base_projectile_damage = Data.player.projectile_damage +
-    (upgrades.damage or 0) * Data.upgrades.damage_per_level
+  self.base_projectile_hit_power = Data.player.projectile_hit_power +
+    (upgrades.hit_power or 0) * Data.upgrades.hit_power_per_level
   self.base_projectile_speed = Data.player.projectile_speed
   self.base_attack_interval = math.max(
     Data.upgrades.min_attack_interval, Data.player.attack_interval -
@@ -51,6 +53,7 @@ function Player:hit(damage)
   if self.dead then return end
   self.hit_time = self.hit_duration
   Unit.hit(self, damage)
+  if self.audio then self.audio:play("player_hit") end
   if self.camera then self.camera:spring_shake(Data.player.hit_shake, 0) end
 end
 
@@ -66,21 +69,18 @@ function Player:fire_bullet(aim_x, aim_y, projectiles, effects)
     y = self.y,
     r = r,
     speed = self.base_projectile_speed,
-    damage = self.base_projectile_damage,
+    hit_power = self.base_projectile_hit_power,
     bounces = self.bonus_bounces,
     critical_chance = self.critical_chance,
     luck_chance = self.luck_chance,
     effects = effects,
+    audio = self.audio,
     arena_width = aw,
     arena_height = ah,
   })
   self.base_attack_cooldown_time = self.base_attack_interval
 
-  if projectile_attack_sound then
-    projectile_attack_sound:stop()
-    projectile_attack_sound:setPitch(0.95 + love.math.random() * 0.1)
-    projectile_attack_sound:play()
-  end
+  if self.audio then self.audio:play("attack") end
   return true, r
 end
 

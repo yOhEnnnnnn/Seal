@@ -1,18 +1,15 @@
 Enemy = Object:extend()
 Enemy:implement(GameObject)
 Enemy:implement(Physics)
-Enemy:implement(Unit)
 
 function Enemy:init(args)
   self:init_game_object(args)
   self:init_physics(args)
   self.base_score = self.base_score or EnemyConfig.base_score
-  self.max_hp = self.max_hp or EnemyConfig.max_hp
-  self:init_unit(args)
-  self.hp = self.hp or self.max_hp
+  self.max_hits = self.max_hits or EnemyConfig.max_hits
+  self.hits_remaining = self.hits_remaining or self.max_hits
   self.v = self.v or self.speed or EnemyConfig.move_speed
-  self.damage = self.damage or EnemyConfig.damage
-  self.def = self.def or 0
+  self.contact_damage = self.contact_damage or EnemyConfig.contact_damage
   self.width = self.width or EnemyConfig.width
   self.height = self.height or EnemyConfig.height
   self.color = self.color or {1, 1, 1, 1}
@@ -47,7 +44,7 @@ function Enemy:update(dt, player, enemies)
     self:update_physics(dt)
   end
   if self:is_colliding_with_object(player) then
-    player:hit(self.damage)
+    player:hit(self.contact_damage)
     self.reached_center = true
     self.dead = true
   end
@@ -79,15 +76,26 @@ function Enemy:spawn_hit_particles(r, impact_color)
   })
 end
 
-function Enemy:hit(damage, projectile)
+function Enemy:hit(hit_power, projectile)
   if self.dead then return end
   self.hit_spring:pull(0.25, 200, 10)
   self.hit_time = self.hit_duration
   if self.invincible then return end
-  Unit.hit(self, damage * 100 / (100 + self.def))
-  if self.dead then
+  self.hits_remaining = math.max(
+    self.hits_remaining - math.max(1, math.floor(hit_power or 1)), 0)
+  if self.hits_remaining == 0 then
+    self:die()
     self.kill_score = self.base_score + (projectile and projectile.score_bonus or 0)
+    if self.audio then self.audio:play("enemy_death") end
+  elseif self.audio then
+    self.audio:play("enemy_hit")
   end
+end
+
+function Enemy:die()
+  if self.dead then return end
+  self.dead = true
+  self:on_death()
 end
 
 function Enemy:on_death()
@@ -108,19 +116,20 @@ function Enemy:on_death()
   })
 end
 
-function Enemy:get_health_alpha()
-  local health = math.max(0, math.min(self.hp / self.max_hp, 1))
-  local minimum = EnemyConfig.min_health_alpha
-  return minimum + health ^ EnemyConfig.health_alpha_exponent * (1 - minimum)
+function Enemy:get_hits_alpha()
+  local hits = math.max(0, math.min(
+    self.hits_remaining / self.max_hits, 1))
+  local minimum = EnemyConfig.min_hits_alpha
+  return minimum + hits ^ EnemyConfig.hits_alpha_exponent * (1 - minimum)
 end
 
 function Enemy:get_color()
   local color = self.hit_time > 0 and self.hit_color or self.color
-  return graphics.color_with_alpha(color, self:get_health_alpha())
+  return graphics.color_with_alpha(color, self:get_hits_alpha())
 end
 
 function Enemy:get_depth_color()
-  return {0.48, 0.49, 0.47, self:get_health_alpha() * 0.8}
+  return {0.48, 0.49, 0.47, self:get_hits_alpha() * 0.8}
 end
 
 function Enemy:draw()

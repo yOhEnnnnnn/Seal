@@ -6,7 +6,7 @@ function Projectile:init(args)
   self:init_game_object(args)
   self:init_physics(args)
   self.speed = self.speed or Data.player.projectile_speed
-  self.damage = self.damage or Data.player.projectile_damage
+  self.hit_power = self.hit_power or Data.player.projectile_hit_power
   self.radius = self.radius or Data.player.projectile_radius
   self.visual_width = self.visual_width or Data.player.projectile_width
   self.visual_height = self.visual_height or Data.player.projectile_height
@@ -22,7 +22,7 @@ function Projectile:init(args)
   self.luck_chance = self.luck_chance or 0
   self.critical = love.math.random() < self.critical_chance
   if self.critical then
-    self.damage = self.damage * Data.upgrades.critical_multiplier
+    self.hit_power = self.hit_power * Data.upgrades.critical_multiplier
     self.radius = self.radius + 1
     self.visual_width = self.visual_width * 1.25
     self.visual_height = self.visual_height * 1.25
@@ -50,7 +50,7 @@ function Projectile:trigger_lucky_effect(origin, enemies)
       end
     end
     if closest then
-      closest:hit(self.damage * 0.6, self)
+      closest:hit(self:get_effect_hit_power(0.6), self)
       self.effects:add(LuckyChain{
         x = origin.x, y = origin.y,
         target_x = closest.x, target_y = closest.y,
@@ -59,12 +59,16 @@ function Projectile:trigger_lucky_effect(origin, enemies)
   elseif effect == 2 then
     self.effects:add(LuckyEmber{
       x = origin.x, y = origin.y,
-      damage = self.damage * 0.25,
+      hit_power = self:get_effect_hit_power(0.25),
       source = self,
     })
   else
     self.effects:add(LuckyFrost{x = origin.x, y = origin.y})
   end
+end
+
+function Projectile:get_effect_hit_power(multiplier)
+  return math.max(1, math.floor(self.hit_power * multiplier + 0.5))
 end
 
 function Projectile:update(dt, enemies)
@@ -93,6 +97,7 @@ function Projectile:update(dt, enemies)
 end
 
 function Projectile:hit_wall(hit_x, hit_y)
+  if self.audio then self.audio:play("wall_hit") end
   if self.bounces <= 0 then
     self:spawn_wall_impact_particles(hit_x, hit_y)
     self.dead = true
@@ -155,7 +160,7 @@ function Projectile:check_hits(enemies, end_x, end_y)
 
   self.x = start_x + (end_x - start_x) * hit_t
   self.y = start_y + (end_y - start_y) * hit_t
-  nearest:hit(self.damage, self)
+  nearest:hit(self.hit_power, self)
   nearest:spawn_hit_particles(self.r + math.pi, self.color)
   self:trigger_lucky_effect(nearest, enemies)
   self.dead = true

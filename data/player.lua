@@ -5,7 +5,7 @@ return {
   max_projectiles = 64,
   attack_interval = 0.10,
   projectile_speed = 160,
-  projectile_damage = 10,
+  projectile_hit_power = 1,
   projectile_radius = 2.5,
   projectile_width = 7,
   projectile_height = 4,

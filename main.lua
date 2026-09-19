@@ -14,7 +14,7 @@ require("engine.game.physics")
 require("engine.game.steering")
 require("engine.game.unit")
 
-
+require("audio")
 require("effect")
 require("projectile")
 require("enemy")

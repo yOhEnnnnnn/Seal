@@ -3,8 +3,7 @@ Arena = Object:extend()
 function Arena:init(game)
   self.game = game
   self.colors = game.colors
-  self.spawn_interval = EnemyConfig.spawn_intervals[game.level] or
-    EnemyConfig.spawn_intervals[#EnemyConfig.spawn_intervals]
+  self.spawn_interval = EnemyConfig.spawn_interval
   self.spawn_timer = self.spawn_interval
   self.next_spawn_side = 1
   self.max_enemies = EnemyConfig.max_enemies
@@ -12,6 +11,7 @@ function Arena:init(game)
     x = aw / 2,
     y = ah / 2,
     camera = game.camera,
+    audio = game.audio,
     upgrades = game.upgrades,
   }
   self.projectiles = Group()
@@ -47,9 +47,23 @@ function Arena:spawn_enemy(side)
   self:add_enemy(x, y)
 end
 
+function Arena:get_enemy_growth()
+  local difficulty = self.game.difficulty_level
+  return {
+    hits_bonus = math.floor(
+      difficulty / EnemyConfig.difficulty_levels_per_hit),
+    speed_multiplier = 1 + math.min(
+      difficulty * EnemyConfig.difficulty_speed_per_level,
+      EnemyConfig.difficulty_speed_max_bonus),
+    contact_damage_bonus = difficulty *
+      EnemyConfig.difficulty_contact_damage_per_level,
+  }
+end
+
 function Arena:add_enemy(x, y, overrides)
   if #self.enemies >= self.max_enemies then return end
   overrides = overrides or {}
+  local growth = self:get_enemy_growth()
   local traits = self.game.enemy_traits
   local armor = traits.armor
   local haste = traits.haste
@@ -57,14 +71,16 @@ function Arena:add_enemy(x, y, overrides)
   return self.enemies:add(Enemy{
     x = x,
     y = y,
-    max_hp = overrides.max_hp or EnemyConfig.max_hp +
-      math.min(armor * EnemyConfig.armor_hp_per_level, EnemyConfig.armor_max_hp_bonus),
-    hp = overrides.hp,
-    v = overrides.v or EnemyConfig.move_speed *
+    max_hits = overrides.max_hits or EnemyConfig.max_hits +
+      growth.hits_bonus + math.min(
+        armor * EnemyConfig.armor_hits_per_level,
+        EnemyConfig.armor_max_hits_bonus),
+    hits_remaining = overrides.hits_remaining,
+    v = overrides.v or EnemyConfig.move_speed * growth.speed_multiplier *
       (1 + math.min(haste * EnemyConfig.haste_per_level,
         EnemyConfig.haste_max_bonus)),
-    damage = overrides.damage or EnemyConfig.damage,
-    def = 0,
+    contact_damage = overrides.contact_damage or EnemyConfig.contact_damage +
+      growth.contact_damage_bonus,
     base_score = overrides.base_score or
       EnemyConfig.base_score + haste * EnemyConfig.haste_score +
       armor * EnemyConfig.armor_score + fission * EnemyConfig.fission_score,
@@ -72,6 +88,7 @@ function Arena:add_enemy(x, y, overrides)
     color = self.colors.enemy,
     hit_color = self.colors.foreground,
     effects = self.effects,
+    audio = self.game.audio,
   })
 end
 
@@ -90,17 +107,18 @@ function Arena:spawn_pending_fissions()
   end
   local margin = EnemyConfig.spawn_margin
   for _, parent in ipairs(self.pending_fissions) do
-    local child_hp = math.max(1, parent.max_hp * EnemyConfig.fission_hp_ratio)
+    local child_hits = math.max(1,
+      math.ceil(parent.max_hits * EnemyConfig.fission_hits_ratio))
     for direction = -1, 1, 2 do
       self:add_enemy(
         math.max(margin, math.min(aw - margin,
           parent.x + direction * EnemyConfig.fission_offset_x)),
         math.max(margin, math.min(ah - margin,
           parent.y + direction * EnemyConfig.fission_offset_y)), {
-          max_hp = child_hp,
-          hp = child_hp,
+          max_hits = child_hits,
+          hits_remaining = child_hits,
           v = parent.v,
-          damage = parent.damage,
+          contact_damage = parent.contact_damage,
           base_score = EnemyConfig.base_score,
           fission = false,
         })
@@ -117,8 +135,9 @@ function Arena:update_enemy_spawning(dt)
 
   self:spawn_enemy(self.next_spawn_side)
   self.next_spawn_side = self.next_spawn_side % 4 + 1
-  self.spawn_timer = self.spawn_interval *
-    (1 - self.game.danger_level * Data.rules.danger.spawn_reduction_per_level)
+  self.spawn_timer = math.max(EnemyConfig.min_spawn_interval,
+    self.spawn_interval * (1 - self.game.difficulty_level *
+      EnemyConfig.difficulty_spawn_reduction_per_level))
 end
 
 function Arena:get_nearest_enemy()
