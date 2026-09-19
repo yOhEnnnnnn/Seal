@@ -38,13 +38,19 @@ function Game:reset_run()
   self.difficulty_level = 0
   self.gold_fraction = 0
   self.score, self.state = 0, "playing"
+  self.revive_count = 0
+  self.death_transition_time = 0
+  self.boss_level = 0
+  self.next_boss_score = EnemyConfig.boss_score_base
+  self.pending_boss_level = nil
   self.coins = Data.rules.starting_coins
   self.upgrades = {
     gold_gain = 0,
     critical = 0,
     luck = 0,
     hit_power = 0,
-    bounce = 0,
+    ball_count = 0,
+    momentum = 0,
     fire_rate = 0,
   }
   self.enemy_traits = {haste = 0, armor = 0, fission = 0}
@@ -67,13 +73,48 @@ function Game:enemy_killed(enemy)
   local gold = math.floor(self.gold_fraction)
   self.gold_fraction = self.gold_fraction - gold
   self:add_coins(gold)
+  self:check_boss_spawn()
 
   return true
 end
 
+function Game:check_boss_spawn()
+  if self.score < self.next_boss_score then return end
+  if self.pending_boss_level or self.arena:has_boss() then return end
+  self.boss_level = self.boss_level + 1
+  self.pending_boss_level = self.boss_level
+  local next_interval = math.floor(EnemyConfig.boss_score_base *
+    EnemyConfig.boss_score_growth ^ self.boss_level + 0.5)
+  self.next_boss_score = self.next_boss_score + next_interval
+end
+
 function Game:fail()
   if self.state ~= "playing" then return end
-  self.state = "failed"
+  self.state = "dying"
+  self.death_transition_time = 0
+  self.arena:start_death_wave()
+end
+
+function Game:get_revive_cost()
+  return math.floor(Data.rules.revive_base_cost *
+    Data.rules.revive_cost_growth ^ self.revive_count + 0.5)
+end
+
+function Game:revive()
+  if self.state ~= "revive" then return false end
+  local cost = self:get_revive_cost()
+  if self.coins < cost then return false end
+  self.coins = self.coins - cost
+  self.revive_count = self.revive_count + 1
+  self.arena:revive()
+  self.state = "playing"
+  return true
+end
+
+function Game:is_revive_button(x, y)
+  return math.abs(x - aw / 2) <= Data.rules.revive_button_width / 2 and
+    math.abs(y - Data.rules.revive_button_y) <=
+      Data.rules.revive_button_height / 2
 end
 
 function Game:add_coins(amount)
@@ -82,7 +123,7 @@ end
 
 function Game:update_mouse_cursor()
   local mouse_x = self.canvas:to_canvas_position(love.mouse.getPosition())
-  love.mouse.setVisible(not mouse_x or mouse_x > aw)
+  love.mouse.setVisible(self.state ~= "playing" or not mouse_x or mouse_x > aw)
 end
 
 function Game:update(dt)
@@ -98,8 +139,16 @@ function Game:update(dt)
       aim_x, aim_y = self.camera:to_world(screen_x, screen_y)
     end
     self.arena:update(dt, aim_x, aim_y)
+  elseif self.state == "dying" then
+    self.death_transition_time = math.min(
+      self.death_transition_time + dt,
+      Data.rules.death_transition_duration)
+    self.arena:update_death_wave(dt)
+    if self.death_transition_time == Data.rules.death_transition_duration then
+      self.state = "revive"
+    end
   end
-  if self.state == "playing" then self.camera:update(dt)
+  if self.state == "playing" or self.state == "dying" then self.camera:update(dt)
   else self.camera:reset() end
 end
 
@@ -117,15 +166,17 @@ function Game:draw_scene()
   local world_x, world_y = self.camera:to_world(x, y)
 
   self.camera:attach()
-  if self.state ~= "failed" then
-    self.arena:draw(x and x <= aw and world_x or nil, world_y)
-  end
+  self.arena:draw(self.state == "playing" and x and x <= aw and world_x or nil,
+    world_y)
   self.camera:detach()
 
-  if self.state == "failed" then
-    self.hud:draw_failure()
-  else
+  if self.state == "playing" then
     self.hud:draw(x, y)
+  elseif self.state == "dying" then
+    self.hud:draw_death_transition(
+      self.death_transition_time / Data.rules.death_transition_duration)
+  elseif self.state == "revive" then
+    self.hud:draw_revive(self:get_revive_cost())
   end
   self.sidebar:draw(x, y)
 end
@@ -158,7 +209,9 @@ end
 
 function Game:keypressed(key)
   if key == "escape" then love.event.quit() end
-  if key == "r" and self.state == "failed" then self:reset_run() end
+  if key == "r" and self.state == "revive" then
+    if not self:revive() then self:reset_run() end
+  end
 end
 
 function Game:mousepressed(x, y, button)
@@ -172,5 +225,7 @@ function Game:mousepressed(x, y, button)
     end
     local world_x, world_y = self.camera:to_world(mouse_x, mouse_y)
     self.arena:mousepressed(world_x, world_y)
+  elseif self.state == "revive" and self:is_revive_button(mouse_x, mouse_y) then
+    self:revive()
   end
 end

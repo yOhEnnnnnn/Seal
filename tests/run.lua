@@ -69,7 +69,7 @@ test("sweep catches a thin enemy across a 100ms frame", function()
   local bullet = Projectile{x = 100, y = 92, r = math.pi / 2}
   bullet:update(0.1, {target})
   assert(target.hits_remaining == 1)
-  assert(bullet.dead)
+  assert(not bullet.dead and bullet.momentum == 1)
   near(bullet.y, 94.5)
 end)
 
@@ -87,7 +87,7 @@ test("sweep handles rotated rectangles and circles", function()
   near(Collision.sweep_circle(-10, 0, 10, 0, 2, circle), 0.25)
 end)
 
-test("wall stops hits beyond the arena and handles long frames", function()
+test("missed shots die at walls and cannot hit outside enemies", function()
   local outside = enemy(500, 100)
   local bullet = Projectile{x = 470, y = 100, arena_width = gw}
   bullet:update(1, {outside})
@@ -96,22 +96,23 @@ test("wall stops hits beyond the arena and handles long frames", function()
   assert(bullet.dead)
 end)
 
-test("attacks use infinite ammunition", function()
+test("fire cooldown allows later volleys", function()
   local player = Player{}
   local shots = Group()
-  assert(player:try_attack(100, 0, shots, Group()))
-  player:update(1)
-  assert(player:try_attack(100, 0, shots, Group()))
-  assert(#shots == 2)
+  local effects = Group()
+  assert(player:try_attack(100, 0, shots, effects))
+  player:update(1, shots, effects)
+  assert(player:try_attack(-100, 0, shots, effects))
+  assert(#shots == 2 and shots[2].vx < 0)
 end)
 
 test("game actions stay silent when audio events are unconfigured", function()
   local game = Game()
   local audio = game.audio
-  for _, name in ipairs({"attack", "enemy_hit", "enemy_death",
-      "wall_hit", "player_hit", "purchase"}) do
+  for _, name in ipairs({"attack", "wall_hit", "player_hit", "purchase"}) do
     assert(audio.events[name] == nil and not audio:play(name))
   end
+  assert(audio.events.enemy_hit and audio.events.enemy_death)
 
   game.arena.player:update(1)
   assert(game.arena.player:try_attack(300, 135,
@@ -145,7 +146,7 @@ end)
 
 test("an endless run starts in combat without level targets", function()
   local game = Game()
-  assert(game.state == "playing" and #game.arena.enemies == 12)
+  assert(game.state == "playing" and #game.arena.enemies == 4)
   assert(game.elapsed_time == 0 and game.difficulty_level == 0)
   assert(game.level == nil and game.get_target_score == nil)
   game:enemy_killed()
@@ -176,30 +177,29 @@ test("kills award fixed score and time raises endless difficulty", function()
   assert(game.coins > coins)
 end)
 
-test("attack cooldown rejects rapid shots without an ammo resource", function()
+test("fire cooldown rejects rapid volleys", function()
   local player = Player{}
   local projectiles = Group()
   assert(not player:try_attack(0, 0, projectiles, Group()))
   assert(player:try_attack(100, 0, projectiles, Group()))
   assert(not player:try_attack(100, 0, projectiles, Group()))
-  player:update(1)
-  assert(player:try_attack(100, 0, projectiles, Group()))
-  assert(#projectiles == 2)
+  player:update(1, projectiles, Group())
+  assert(player:try_attack(-100, 0, projectiles, Group()))
+  assert(#projectiles == 2 and projectiles[2].vx < 0)
 end)
 
 test("successful firing applies directional camera recoil", function()
   local camera = Camera{240, 135, 480, 270}
-  local player = Player{x = 0, y = 135, camera = camera,
-    projectile_spread = 0}
+  local player = Player{x = 0, y = 135, camera = camera}
   assert(player:try_attack(100, 135, Group(), Group()))
   assert(camera.spring_x.x < 0 and math.abs(camera.spring_y.x) < 1e-8)
 end)
 
-test("projectiles receive bounded random spread", function()
+test("a volley follows the selected direction", function()
   local player = Player{x = 0, y = 0}
   local projectiles = Group()
   assert(player:try_attack(100, 0, projectiles, Group()))
-  assert(math.abs(projectiles[1].r) <= math.pi / 60)
+  near(projectiles[1].r, 0)
 end)
 
 test("screen input fires only inside the combat panel", function()
@@ -241,23 +241,24 @@ test("sidebar upgrades apply immediately during an endless run", function()
   assert(game.sidebar:buy(shop_card(game, "luck")))
   assert(game.sidebar:buy(shop_card(game, "hit_power")))
   assert(game.arena.player.base_projectile_hit_power == 2)
-  assert(game.sidebar:buy(shop_card(game, "bounce")))
-  assert(game.arena.player.bonus_bounces == 1)
+  assert(game.sidebar:buy(shop_card(game, "ball_count")))
+  assert(game.arena.player.ball_count == 2)
+  assert(game.sidebar:buy(shop_card(game, "momentum")))
+  assert(game.arena.player.momentum_gain == 1.25)
   assert(game.sidebar:buy(shop_card(game, "fire_rate")))
-  near(game.arena.player.base_attack_interval, 0.09)
+  near(game.arena.player.fire_interval, 0.275)
   assert(game.arena.player.base_projectile_hit_power == 2 and
-    game.arena.player.bonus_bounces == 1 and
     game.arena.player.critical_chance == 0.05 and
-    game.arena.player.luck_chance == 0.03)
+    game.arena.player.luck_state.level == 1)
 end)
 
 test("sidebar rejects unaffordable and capped upgrades", function()
   local game = Game()
-  local bounce = shop_card(game, "bounce")
-  assert(not game.sidebar:buy(bounce))
-  game.upgrades.bounce = bounce.max
+  local momentum = shop_card(game, "momentum")
+  assert(not game.sidebar:buy(momentum))
+  game.upgrades.momentum = momentum.max
   local coins = game.coins
-  assert(not game.sidebar:buy(bounce) and game.coins == coins)
+  assert(not game.sidebar:buy(momentum) and game.coins == coins)
 end)
 
 test("all scene states draw through the extracted views", function()
@@ -269,23 +270,26 @@ test("all scene states draw through the extracted views", function()
   assert(stack_depth == 0)
   game:draw_scene()
   game:fail()
+  game:update(Data.rules.death_transition_duration)
   draw_text = {}
   game:draw_scene()
   assert(table.concat(draw_text, "|"):find("PLAYER DESTROYED", 1, true))
 end)
 
-test("restart refreshes arena and sidebar", function()
+test("paid revive preserves the run and spends increasing coins", function()
   local game = Game()
   local old_arena = game.arena
   game.elapsed_time = 95
   game.difficulty_level = 3
   game.score = 40
   game:fail()
+  game:update(Data.rules.death_transition_duration)
   game:keypressed("r")
-  assert(game.coins == 8 and game.arena ~= old_arena)
-  assert(game.elapsed_time == 0 and game.difficulty_level == 0 and
-    game.score == 0)
-  assert(game.sidebar.game == game and game.hud.game == game)
+  assert(game.coins == 0 and game.arena == old_arena)
+  assert(game.elapsed_time == 95 and game.difficulty_level == 3 and
+    game.score == 40 and game.state == "playing")
+  assert(game.revive_count == 1 and
+    game:get_revive_cost() > Data.rules.revive_base_cost)
 end)
 
 test("enemies face one edge toward the player and move straight", function()
@@ -322,7 +326,7 @@ test("enemy traits modify newly spawned enemies", function()
   game.enemy_traits = {haste = 1, armor = 1, fission = 1}
   game.arena = Arena(game)
   local target = game.arena:add_enemy(100, 100)
-  assert(target.max_hits == 4 and target.hits_remaining == 4)
+  assert(target.max_hits == 2 and target.hits_remaining == 2)
   near(target.v, EnemyConfig.move_speed * 1.1)
   assert(target.contact_damage == 8)
   assert(target.base_score == 7 and target.fission)
@@ -330,17 +334,18 @@ test("enemy traits modify newly spawned enemies", function()
   game.enemy_traits.armor = 10
   local capped = game.arena:add_enemy(120, 100)
   near(capped.v, EnemyConfig.move_speed * 1.3)
-  assert(capped.max_hits == 6)
+  assert(capped.max_hits == 4)
 end)
 
 test("enemy growth follows elapsed-time difficulty", function()
   local game = Game()
   local base = game.arena:add_enemy(80, 100)
-  assert(base.max_hits == 3 and base.hits_remaining == 3)
+  assert(base.max_hits == 1 and base.hits_remaining == 1)
   near(base.v, EnemyConfig.move_speed)
   assert(base.contact_damage == 8)
 
   game.difficulty_level = 1
+  game.elapsed_time = 30
   local difficulty_one = game.arena:add_enemy(100, 100)
   assert(difficulty_one.max_hits == 3 and
     difficulty_one.hits_remaining == 3)
@@ -348,6 +353,7 @@ test("enemy growth follows elapsed-time difficulty", function()
   assert(difficulty_one.contact_damage == 9)
 
   game.difficulty_level = 2
+  game.elapsed_time = 60
   local difficulty_two = game.arena:add_enemy(120, 100)
   assert(difficulty_two.max_hits == 4 and
     difficulty_two.hits_remaining == 4)
@@ -355,26 +361,62 @@ test("enemy growth follows elapsed-time difficulty", function()
   assert(difficulty_two.contact_damage == 10)
 
   game.difficulty_level = 20
+  game.elapsed_time = 600
   game.enemy_traits.armor = 10
   local late = game.arena:add_enemy(140, 100)
-  assert(late.max_hits == 16 and late.hits_remaining == 16)
+  assert(late.max_hits == 26 and late.hits_remaining == 26)
   near(late.v, EnemyConfig.move_speed * 1.4)
-  assert(late.contact_damage == 28)
+  assert(late.contact_damage == 24)
+end)
+
+test("late enemies scale against purchased hit power", function()
+  local game = Game()
+  game.difficulty_level = 20
+  game.elapsed_time = 600
+  game.arena.player.base_projectile_hit_power = 11
+  local target = game.arena:add_enemy(100, 100)
+  assert(target.max_hits == 30)
+end)
+
+test("late enemies accelerate only after entering the pressure radius", function()
+  local game = Game()
+  game.difficulty_level = 20
+  game.elapsed_time = 600
+  local far = game.arena:add_enemy(10, 10)
+  local close_enemy = game.arena:add_enemy(
+    game.arena.player.x + EnemyConfig.pressure_radius / 2,
+    game.arena.player.y)
+  far:update(0, game.arena.player, game.arena.enemies)
+  close_enemy:update(0, game.arena.player, game.arena.enemies)
+  near(far.max_speed, far.v)
+  assert(close_enemy.max_speed > close_enemy.v)
 end)
 
 test("enemy spawning accelerates to a readable minimum interval", function()
   local game = Game()
   game.arena.enemies:clear()
   game.difficulty_level = 2
+  game.elapsed_time = 60
   game.arena.spawn_timer = 0
   game.arena:update_enemy_spawning(0)
   near(game.arena.spawn_timer, EnemyConfig.spawn_interval * 0.88)
 
   game.arena.enemies:clear()
   game.difficulty_level = 100
+  game.elapsed_time = 3000
   game.arena.spawn_timer = 0
   game.arena:update_enemy_spawning(0)
   near(game.arena.spawn_timer, EnemyConfig.min_spawn_interval)
+end)
+
+test("late difficulty spawns enemy groups instead of only faster enemies", function()
+  local game = Game()
+  game.arena.enemies:clear()
+  game.difficulty_level = EnemyConfig.spawn_batch_levels * 3
+  game.elapsed_time = 600
+  game.arena.spawn_timer = 0
+  game.arena:update_enemy_spawning(0)
+  assert(#game.arena.enemies == EnemyConfig.max_spawn_batch)
 end)
 
 test("fission creates two half-hit children without recursive splitting", function()
@@ -394,7 +436,7 @@ test("fission creates two half-hit children without recursive splitting", functi
   end
 end)
 
-test("enemy collision damages player and ends the enemy", function()
+test("one enemy collision kills the player and ends the enemy", function()
   local game = Game()
   local player = game.arena.player
   local target = Enemy{
@@ -402,11 +444,10 @@ test("enemy collision damages player and ends the enemy", function()
     y = player.y,
     effects = Group(),
   }
-  local hp = player.hp
   target:update(0, player, {target})
-  assert(player.hp == hp - target.contact_damage)
+  assert(player.hp == 0)
   assert(target.dead and target.reached_center)
-  assert(not player.dead)
+  assert(player.dead)
   assert(player.hit_time == player.hit_duration)
 end)
 
@@ -421,16 +462,46 @@ test("player death fails the battle", function()
   }
   game.arena.enemies:add(target)
   game.arena:update(0)
-  assert(player.dead and game.state == "failed")
+  assert(player.dead and game.state == "dying")
+  game:update(Data.rules.death_transition_duration)
+  assert(game.state == "revive")
 end)
 
-test("ordinary shots stop at the nearest enemy", function()
+test("death wave reaches and pushes enemies by distance", function()
+  local game = Game()
+  local player = game.arena.player
+  game.arena.enemies:clear()
+  local close_enemy = game.arena:add_enemy(player.x + 30, player.y)
+  local far_enemy = game.arena:add_enemy(player.x + 200, player.y)
+  local close_x = close_enemy.x
+  game:fail()
+  game:update(0.1)
+  assert(close_enemy.death_wave_hit and close_enemy.x > close_x)
+  assert(not far_enemy.death_wave_hit)
+end)
+
+test("revive clears nearby enemies without awarding score", function()
+  local game = Game()
+  local player = game.arena.player
+  game.arena.enemies:clear()
+  local close_enemy = game.arena:add_enemy(player.x + 20, player.y)
+  local far_enemy = game.arena:add_enemy(
+    player.x + Data.rules.revive_clear_radius + 20, player.y)
+  local score = game.score
+  player.dead, player.hp = true, 0
+  game.state = "revive"
+  assert(game:revive())
+  assert(close_enemy.dead and not far_enemy.dead)
+  assert(game.score == score and player.invincibility_time > 0)
+end)
+
+test("the ball reflects from the nearest enemy", function()
   local first, second = enemy(80, 100), enemy(100, 100)
   local shot = Projectile{x = 50, y = 100}
   shot:update(0.5, {second, first})
   assert(first.hits_remaining == 1)
   assert(second.hits_remaining == second.max_hits)
-  assert(shot.dead)
+  assert(not shot.dead and shot.vx < 0)
 end)
 
 test("ordinary kill scoring and coins settle once", function()
@@ -447,26 +518,48 @@ test("ordinary kill scoring and coins settle once", function()
   assert(game.score == 106 and game.coins == 13)
 end)
 
-test("bounce upgrades reflect shots off enemies", function()
-  local game = Game()
-  game.coins = 100
-  assert(game.sidebar:buy(shop_card(game, "bounce")))
-  local player = game.arena.player
-  player.projectile_spread = 0
-  assert(player:try_attack(300, player.y, game.arena.projectiles, game.arena.effects))
-  local shot = game.arena.projectiles[1]
-  assert(shot.bounces == 1)
-  local first = enemy(player.x + 20, player.y)
-  local second = enemy(player.x - 20, player.y)
+test("enemy hits reflect the ball and build momentum", function()
+  local shot = Projectile{x = 100, y = 100, r = 0}
+  local first = enemy(120, 100)
+  local second = enemy(80, 100)
   first.hits_remaining = 1
   second.hits_remaining = 1
   shot:update(0.1, {first, second})
-  assert(first.dead and shot.bounces == 0 and not shot.dead)
+  assert(first.dead and not shot.dead and shot.momentum == 1)
   assert(shot.vx < 0 and math.abs(shot.vy) < shot.speed * 0.1)
-  assert(shot.score_bonus == 2 and Data.bullets.score_bonus == 1)
   shot:update(0.2, {first, second})
-  assert(second.dead and shot.dead)
-  assert(second.kill_score == second.base_score + 2)
+  assert(second.dead and not shot.dead and shot.momentum == 2)
+end)
+
+test("buying ball count expands the next center volley", function()
+  local game = Game()
+  game.coins = 100
+  local player = game.arena.player
+  assert(player:try_attack(300, player.y,
+    game.arena.projectiles, game.arena.effects))
+  assert(#game.arena.projectiles == 1)
+  assert(game.sidebar:buy(shop_card(game, "ball_count")))
+  assert(#game.arena.projectiles == 1)
+  assert(player.ball_count == 2)
+  player:update(1)
+  assert(player:try_attack(300, player.y,
+    game.arena.projectiles, game.arena.effects))
+  assert(#game.arena.projectiles == 3)
+end)
+
+test("score milestones queue one scaled boss", function()
+  local game = Game()
+  game.arena.enemies:clear()
+  game.score = EnemyConfig.boss_score_base - 1
+  game:enemy_killed{base_score = 1, kill_score = 1}
+  assert(game.pending_boss_level == 1 and
+    game.next_boss_score == 250)
+  game.arena:spawn_pending_boss()
+  assert(#game.arena.enemies == 1)
+  local boss = game.arena.enemies[1]
+  assert(boss.is_boss and boss.max_hits == EnemyConfig.boss_hits)
+  assert(boss.width == EnemyConfig.boss_size and
+    boss.height == EnemyConfig.boss_size)
 end)
 
 test("gold gain upgrades multiply kill income", function()
@@ -480,19 +573,22 @@ end)
 
 test("critical shots count as double hit power", function()
   local shot = Projectile{x = 0, y = 0, critical_chance = 1}
-  assert(shot.critical and
-    shot.hit_power == Data.player.projectile_hit_power * 2)
-  assert(shot.color == Data.theme.colors.gold)
-  assert(shot.visual_width == Data.player.projectile_width * 1.25 and
-    shot.visual_height == Data.player.projectile_height * 1.25)
+  local target = enemy(20, 0)
+  shot:update(0.1, {target})
+  assert(target.dead)
 end)
 
-test("luck creates at most five persistent bouncing orbs", function()
+test("luck charge creates at most five persistent bouncing orbs", function()
   local effects = Group()
-  local shot = Projectile{x = 0, y = 0, luck_chance = 1, effects = effects}
+  local luck_state = {hits = 0, level = 8}
+  local shot = Projectile{x = 0, y = 0, luck_state = luck_state,
+    effects = effects}
   local origin = enemy(100, 100)
-  for _ = 1, 8 do shot:trigger_lucky_effect(origin, {origin}) end
+  for _ = 1, Data.upgrades.luck_hits_min * 8 do
+    shot:trigger_lucky_effect(origin)
+  end
   assert(#effects == Data.upgrades.luck_orb_limit)
+  assert(luck_state.hits == Data.upgrades.luck_hits_min)
   local orb = effects[1]
   assert(getmetatable(orb) == LuckyOrb and not orb.duration)
   orb.x, orb.vx = aw - orb.radius, math.abs(orb.vx)

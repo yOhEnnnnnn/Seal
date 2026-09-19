@@ -96,7 +96,10 @@ function LuckyOrb:update(dt, enemies)
       self.x, self.y, self.x, self.y, self.radius, enemy) < math.huge then
       touching_enemies[enemy] = true
       if not self.touching_enemies[enemy] then
-        enemy:hit(self.hit_power, self.source)
+        local luck_bonus = math.floor(
+          (self.luck_state.level - 1) /
+            Data.upgrades.luck_damage_levels_per_point)
+        enemy:hit(self.hit_power + luck_bonus, self.source)
       end
     end
   end
@@ -115,4 +118,27 @@ function LuckyOrb:draw()
       center - math.pi / 8, center + math.pi / 8, blue, 2)
   end
   love.graphics.pop()
+end
+
+RevivePulse = Object:extend()
+RevivePulse:implement(GameObject)
+
+function RevivePulse:init(args)
+  self:init_game_object(args)
+  self.time = 0
+  self.duration = 0.45
+end
+
+function RevivePulse:update(dt)
+  self.time = math.min(self.time + dt, self.duration)
+  if self.time == self.duration then self.dead = true end
+end
+
+function RevivePulse:draw()
+  local progress = self.time / self.duration
+  local radius = Data.rules.revive_clear_radius * progress
+  graphics.circle(self.x, self.y, radius,
+    {1, 1, 1, (1 - progress) * 0.16})
+  graphics.circle(self.x, self.y, radius,
+    {0, 240 / 255, 1, 1 - progress}, 2)
 end

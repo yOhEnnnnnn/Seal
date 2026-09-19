@@ -10,6 +10,7 @@ function Enemy:init(args)
   self.hits_remaining = self.hits_remaining or self.max_hits
   self.v = self.v or self.speed or EnemyConfig.move_speed
   self.contact_damage = self.contact_damage or EnemyConfig.contact_damage
+  self.pressure_speed_bonus = self.pressure_speed_bonus or 0
   self.width = self.width or EnemyConfig.width
   self.height = self.height or EnemyConfig.height
   self.color = self.color or {1, 1, 1, 1}
@@ -36,6 +37,11 @@ function Enemy:update(dt, player, enemies)
     local dx, dy = player.x - self.x, player.y - self.y
     local distance = math.sqrt(dx * dx + dy * dy)
     if distance > 0 then
+      local pressure = math.max(
+        0, 1 - distance / EnemyConfig.pressure_radius)
+      speed = speed * (1 + pressure * self.pressure_speed_bonus)
+      self.max_v = speed
+      self.max_speed = speed
       self.r = math.atan2(dy, dx)
       self:set_velocity(dx / distance * speed, dy / distance * speed)
     else
@@ -48,6 +54,33 @@ function Enemy:update(dt, player, enemies)
     self.reached_center = true
     self.dead = true
   end
+end
+
+function Enemy:hit_by_death_wave(dx, dy, distance)
+  self.death_wave_hit = true
+  self.death_wave_age = 0
+  local length = math.max(distance, 0.001)
+  local push = Data.rules.death_wave_push
+  self.death_wave_dx = dx / length
+  self.death_wave_dy = dy / length
+  self.death_wave_v = push
+  self.death_wave_phase = love.math.random() * math.pi * 2
+  self.death_wave_spin = (love.math.random() * 2 - 1) * 2.5
+end
+
+function Enemy:update_death_wave(dt)
+  if not self.death_wave_hit then return end
+  self.death_wave_age = self.death_wave_age + dt
+  local decay = math.exp(-Data.rules.death_wave_drag * dt)
+  self.death_wave_v = self.death_wave_v * decay
+  local sway = math.sin(self.death_wave_age * 18 + self.death_wave_phase) *
+    Data.rules.death_wave_sway * decay
+  local tangent_x, tangent_y = -self.death_wave_dy, self.death_wave_dx
+  self.x = self.x + (self.death_wave_dx * self.death_wave_v +
+    tangent_x * sway) * dt
+  self.y = self.y + (self.death_wave_dy * self.death_wave_v +
+    tangent_y * sway) * dt
+  self.r = self.r + self.death_wave_spin * decay * dt
 end
 
 function Enemy:spawn_hit_particles(r, impact_color)
