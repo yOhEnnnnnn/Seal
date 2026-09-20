@@ -26,8 +26,6 @@ function Projectile:init(args)
   self.momentum_decay_time = 0
   self.ignored_enemy = nil
   self.ignore_time = 0
-  self.critical_chance = self.critical_chance or 0
-  self.luck_state = self.luck_state or {hits = 0, level = 0}
   self:set_as_circle(self.radius, "dynamic", "projectile")
   self:set_velocity(self.speed * math.cos(self.r), self.speed * math.sin(self.r))
   self:update_momentum_stats()
@@ -53,41 +51,6 @@ function Projectile:add_momentum()
   self.momentum = self.momentum + self.momentum_gain
   self.momentum_decay_time = Data.upgrades.momentum_decay_delay
   self:update_momentum_stats()
-end
-
-function Projectile:trigger_lucky_effect(origin)
-  local luck_level = self.luck_state.level
-  if luck_level <= 0 then return end
-
-  local hits_required = math.max(Data.upgrades.luck_hits_min,
-    Data.upgrades.luck_hits_base - luck_level)
-  self.luck_state.hits = math.min(
-    self.luck_state.hits + 1, hits_required)
-  if self.luck_state.hits < hits_required then return end
-
-  local orb_count = 0
-  for _, effect in ipairs(self.effects) do
-    if getmetatable(effect) == LuckyOrb and not effect.dead then
-      orb_count = orb_count + 1
-    end
-  end
-  if orb_count >= Data.upgrades.luck_orb_limit then return end
-  self.luck_state.hits = 0
-
-  self.effects:add(LuckyOrb{
-    x = origin.x,
-    y = origin.y,
-    r = self.r + (love.math.random() * 2 - 1) * math.pi / 3,
-    hit_power = self:get_effect_hit_power(0.5),
-    luck_state = self.luck_state,
-    source = self,
-  })
-end
-
-function Projectile:get_effect_hit_power(multiplier)
-  local hit_power = self.base_hit_power + math.floor(
-    self.momentum / Data.upgrades.momentum_damage_step)
-  return math.max(1, math.floor(hit_power * multiplier + 0.5))
 end
 
 function Projectile:update(dt, enemies)
@@ -121,8 +84,34 @@ function Projectile:update(dt, enemies)
   end
   if self.lifetime then
     self.lifetime = self.lifetime - dt
-    if self.lifetime <= 0 then self.dead = true end
+    if self.lifetime <= 0 then self:shatter() end
   end
+end
+
+function Projectile:shatter()
+  if self.dead then return end
+  for _ = 1, 3 do
+    local width = 4 + love.math.random() * 2
+    self.effects:add(HitParticle{
+      x = self.x,
+      y = self.y,
+      r = love.math.random() * math.pi * 2,
+      speed = 45 + love.math.random() * 55,
+      duration = 0.14 + love.math.random() * 0.12,
+      width = width,
+      height = width / 2,
+      color = self.color,
+    })
+  end
+  self.effects:add(HitCircle{
+    x = self.x,
+    y = self.y,
+    radius = 5,
+    duration = 0.08,
+    color = {1, 1, 1, 1},
+    target_color = self.color,
+  })
+  self.dead = true
 end
 
 function Projectile:hit_wall(hit_x, hit_y)
@@ -181,17 +170,13 @@ function Projectile:check_hits(enemies, end_x, end_y)
 
   self.x = start_x + (end_x - start_x) * hit_t
   self.y = start_y + (end_y - start_y) * hit_t
-  local critical = love.math.random() < self.critical_chance
   local hit_power = self.base_hit_power + math.floor(
     self.momentum / Data.upgrades.momentum_damage_step)
-  if critical then hit_power = hit_power * Data.upgrades.critical_multiplier end
   self.score_bonus = Data.bullets.score_bonus + math.floor(self.momentum / 3)
   nearest:hit(hit_power, self)
   self.ignored_enemy = nearest
   self.ignore_time = 0.06
-  nearest:spawn_hit_particles(
-    self.r + math.pi, critical and Data.theme.colors.gold or self.color)
-  self:trigger_lucky_effect(nearest)
+  nearest:spawn_hit_particles(self.r + math.pi, self.color)
   self:add_momentum()
   local normal_x, normal_y = self.x - nearest.x, self.y - nearest.y
   local normal_length = math.sqrt(normal_x * normal_x + normal_y * normal_y)

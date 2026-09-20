@@ -15,30 +15,24 @@ function Player:init(args)
   self.base_projectile_speed = self.base_projectile_speed or Data.player.projectile_speed
   self.base_projectile_hit_power = self.base_projectile_hit_power or
     Data.player.projectile_hit_power
-  self.luck_state = {hits = 0, level = 0}
   self:apply_upgrades(args.upgrades or {})
-  self.fire_cooldown = 0
   self.hit_color = self.hit_color or {1, 1, 1, 1}
   self.hit_duration = Data.player.hit_duration
   self.hit_time = 0
   self.invincibility_time = 0
+  self.ready_flash_time = 0
   self:set_as_rectangle(self.size, self.size, "dynamic", "player")
 end
 
 function Player:apply_upgrades(upgrades)
   self.base_projectile_hit_power = Data.player.projectile_hit_power +
     (upgrades.hit_power or 0) * Data.upgrades.hit_power_per_level
-  self.base_projectile_speed = Data.player.projectile_speed
-  self.fire_interval = math.max(
-    Data.upgrades.min_fire_interval, Data.player.fire_interval -
-      (upgrades.fire_rate or 0) * Data.upgrades.fire_interval_reduction)
+  self.base_projectile_speed = Data.player.projectile_speed *
+    (1 + (upgrades.ball_speed or 0) *
+      Data.upgrades.ball_speed_bonus_per_level)
   self.momentum_gain = 1 + (upgrades.momentum or 0) *
     Data.upgrades.momentum_gain_per_level
   self.ball_count = 1 + (upgrades.ball_count or 0)
-  self.critical_chance = (upgrades.critical or 0) *
-    Data.upgrades.critical_chance_per_level
-  self.luck_level = upgrades.luck or 0
-  self.luck_state.level = self.luck_level
 end
 
 function Player:spawn_ball(r, projectiles, effects)
@@ -58,9 +52,8 @@ function Player:spawn_ball(r, projectiles, effects)
 end
 
 function Player:apply_projectile_upgrades(projectile)
+  projectile.base_speed = self.base_projectile_speed
   projectile.base_hit_power = self.base_projectile_hit_power
-  projectile.critical_chance = self.critical_chance
-  projectile.luck_state = self.luck_state
   projectile.momentum_gain = self.momentum_gain
   projectile:update_momentum_stats()
 end
@@ -70,8 +63,12 @@ function Player:update(dt)
   self:stop()
   self.hit_time = math.max(self.hit_time - dt, 0)
   self.invincibility_time = math.max(self.invincibility_time - dt, 0)
+  self.ready_flash_time = math.max(self.ready_flash_time - dt, 0)
+end
 
-  self.fire_cooldown = math.max(self.fire_cooldown - dt, 0)
+function Player:on_volley_ready()
+  self.ready_flash_time = Data.player.ready_flash_duration
+  if self.audio then self.audio:play("volley_ready") end
 end
 
 function Player:hit(damage)
@@ -84,12 +81,11 @@ function Player:hit(damage)
 end
 
 function Player:fire_bullet(aim_x, aim_y, projectiles, effects)
-  if self.fire_cooldown > 0 then return end
+  if #projectiles > 0 then return end
   if (aim_x - self.x) ^ 2 + (aim_y - self.y) ^ 2 <= 1 then return end
 
   local r = math.atan2(aim_y - self.y, aim_x - self.x)
   local shot_count = self.ball_count
-  self.fire_cooldown = self.fire_interval
   for index = 1, shot_count do
     local angle = r + (index - (shot_count + 1) / 2) *
       Data.player.volley_angle
@@ -117,11 +113,25 @@ end
 function Player:draw()
   love.graphics.push("all")
   love.graphics.translate(self.x, self.y)
+  if self.revive_progress then
+    local reform = math.min(self.revive_progress *
+      Data.rules.revive_transition_duration /
+      Data.rules.revive_reform_duration, 1)
+    local eased = 1 - (1 - reform) ^ 3
+    love.graphics.rotate((1 - eased) * -0.8)
+    love.graphics.scale(eased, eased)
+  end
   if self.invincibility_time > 0 then
     love.graphics.setColor(1, 1, 1,
       0.45 + 0.35 * math.abs(math.sin(self.invincibility_time * 14)))
   end
   self:draw_rounded_square(0, 0, self.size,
     self.hit_time > 0 and self.hit_color or self.color)
+  if self.ready_flash_time > 0 then
+    local progress = 1 - self.ready_flash_time /
+      Data.player.ready_flash_duration
+    graphics.circle(0, 0, self.size + progress * 10,
+      {1, 1, 1, 1 - progress}, 1.5)
+  end
   love.graphics.pop()
 end

@@ -62,64 +62,6 @@ function HitCircle:draw()
   graphics.circle(self.x, self.y, self.radius, self.color)
 end
 
-LuckyOrb = Object:extend()
-LuckyOrb:implement(GameObject)
-
-function LuckyOrb:init(args)
-  self:init_game_object(args)
-  self.radius = Data.upgrades.luck_orb_radius
-  self.speed = Data.upgrades.luck_orb_speed
-  self.vx = math.cos(self.r) * self.speed
-  self.vy = math.sin(self.r) * self.speed
-  self.rotation = 0
-  self.rotation_speed = (love.math.random() < 0.5 and -1 or 1) *
-    (0.7 + love.math.random() * 0.5)
-  self.touching_enemies = {}
-end
-
-function LuckyOrb:update(dt, enemies)
-  self.rotation = self.rotation + self.rotation_speed * dt
-  self.x = self.x + self.vx * dt
-  self.y = self.y + self.vy * dt
-  if self.x <= self.radius or self.x >= aw - self.radius then
-    self.x = math.max(self.radius, math.min(aw - self.radius, self.x))
-    self.vx = self.x == self.radius and math.abs(self.vx) or -math.abs(self.vx)
-  end
-  if self.y <= self.radius or self.y >= ah - self.radius then
-    self.y = math.max(self.radius, math.min(ah - self.radius, self.y))
-    self.vy = self.y == self.radius and math.abs(self.vy) or -math.abs(self.vy)
-  end
-
-  local touching_enemies = {}
-  for _, enemy in ipairs(enemies) do
-    if not enemy.dead and Collision.sweep_circle(
-      self.x, self.y, self.x, self.y, self.radius, enemy) < math.huge then
-      touching_enemies[enemy] = true
-      if not self.touching_enemies[enemy] then
-        local luck_bonus = math.floor(
-          (self.luck_state.level - 1) /
-            Data.upgrades.luck_damage_levels_per_point)
-        enemy:hit(self.hit_power + luck_bonus, self.source)
-      end
-    end
-  end
-  self.touching_enemies = touching_enemies
-end
-
-function LuckyOrb:draw()
-  local blue = {0, 240 / 255, 1, 1}
-  love.graphics.push("all")
-  love.graphics.translate(self.x, self.y)
-  love.graphics.rotate(self.rotation)
-  graphics.circle(0, 0, self.radius, {0, 240 / 255, 1, 0.08})
-  for index = 0, 3 do
-    local center = index * math.pi / 2 + math.pi / 4
-    graphics.arc("open", 0, 0, self.radius,
-      center - math.pi / 8, center + math.pi / 8, blue, 2)
-  end
-  love.graphics.pop()
-end
-
 RevivePulse = Object:extend()
 RevivePulse:implement(GameObject)
 
@@ -141,4 +83,42 @@ function RevivePulse:draw()
     {1, 1, 1, (1 - progress) * 0.16})
   graphics.circle(self.x, self.y, radius,
     {0, 240 / 255, 1, 1 - progress}, 2)
+end
+
+ConvergenceBurst = Object:extend()
+ConvergenceBurst:implement(GameObject)
+
+function ConvergenceBurst:init(args)
+  self:init_game_object(args)
+  self.origins = self.origins or {}
+  self.radius = self.radius or Data.player.convergence_base_radius
+  self.duration = Data.player.convergence_duration
+  self.time = 0
+end
+
+function ConvergenceBurst:update(dt)
+  self.time = math.min(self.time + dt, self.duration)
+  if self.time == self.duration then self.dead = true end
+end
+
+function ConvergenceBurst:draw()
+  local progress = self.time / self.duration
+  local gather = math.min(progress * 2.4, 1)
+  local eased = cubic_in_out(gather)
+  local color = {0, 240 / 255, 1, 1 - gather * 0.65}
+  for _, origin in ipairs(self.origins) do
+    local start_x = origin.x + (self.x - origin.x) * eased
+    local start_y = origin.y + (self.y - origin.y) * eased
+    graphics.line(start_x, start_y, self.x, self.y, color, 1.5)
+    graphics.rectangle(start_x, start_y, 3, 3, nil, nil, color)
+  end
+
+  local blast = math.max(0, (progress - 0.32) / 0.68)
+  if blast > 0 then
+    local blast_radius = self.radius * cubic_in_out(blast)
+    graphics.circle(self.x, self.y, blast_radius,
+      {0, 240 / 255, 1, (1 - blast) * 0.14})
+    graphics.circle(self.x, self.y, blast_radius,
+      {1, 1, 1, 1 - blast}, 2)
+  end
 end

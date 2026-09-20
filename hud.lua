@@ -30,11 +30,11 @@ function HUD:draw_momentum()
   graphics.set_color({0, 240 / 255, 1, 1})
   local status = "BALLS " .. player.ball_count ..
     "  M " .. math.floor(momentum)
-  if player.luck_state.level > 0 then
-    local hits_required = math.max(Data.upgrades.luck_hits_min,
-      Data.upgrades.luck_hits_base - player.luck_state.level)
-    status = status .. "  LUCK " .. player.luck_state.hits ..
-      "/" .. hits_required
+  if #self.game.arena.projectiles == 0 then
+    status = status .. "  READY"
+  else
+    local total_momentum = self.game.arena:get_convergence_stats()
+    status = status .. "  FOCUS " .. math.floor(total_momentum)
   end
   love.graphics.printf(status, aw / 2 - 100, 10, 200, "center")
 end
@@ -67,32 +67,48 @@ function HUD:draw_health()
     "HP: " .. math.ceil(player.hp) .. " / " .. player.max_hp, 10, 40)
 end
 
-function HUD:get_death_tile_scale(progress, order)
-  local covering = progress < 0.52
-  local phase = covering and
-    math.max(0, math.min((progress - 0.04) / 0.44, 1)) or
-    math.max(0, math.min((progress - 0.56) / 0.44, 1))
-  local amount = math.max(0, math.min((phase - order * 0.72) / 0.28, 1))
-  local eased = amount * amount * (3 - 2 * amount)
-  return covering and eased or 1 - eased
-end
-
 function HUD:draw_death_transition(progress)
-  local size = 20
-  local columns = math.ceil(gw / size)
-  local rows = math.ceil(gh / size)
-  for row = 1, rows do
-    for column = 1, columns do
-      local diagonal = ((column - 1) / (columns - 1) +
-        (rows - row) / (rows - 1)) / 2
-      local scale = self:get_death_tile_scale(progress, diagonal)
-      if scale > 0 then
-        local x = (column - 0.5) * size
-        local y = (row - 0.5) * size
-        graphics.rectangle(x, y, (size + 1) * scale, (size + 1) * scale,
-          nil, nil, self.colors.enemy)
-      end
+  local hit_stop_ratio = Data.rules.death_hit_stop /
+    Data.rules.death_transition_duration
+  local hit_flash = math.max(0, 1 - progress / hit_stop_ratio)
+  local motion_progress = math.max(0,
+    (progress - hit_stop_ratio) / (1 - hit_stop_ratio))
+  local pull = math.max(0, math.min(
+    motion_progress / Data.rules.death_pull_end, 1))
+  local pull_eased = pull * pull * (3 - 2 * pull)
+  if motion_progress < Data.rules.death_pull_end then
+    local size = Data.player.size * (1 - pull_eased)
+    graphics.rectangle(aw / 2, ah / 2, size, size,
+      nil, nil, {1, 1, 1, 1 - pull_eased})
+    graphics.circle(aw / 2, ah / 2, 12 - pull_eased * 8,
+      {0, 240 / 255, 1, 0.7 * (1 - pull_eased)}, 1.5)
+  else
+    local burst = math.max(0, math.min(
+      (motion_progress - Data.rules.death_pull_end) /
+        (Data.rules.death_wave_duration + Data.rules.death_wave_delay), 1))
+    local eased = 1 - (1 - burst) ^ 3
+    local radius = eased * aw / 2
+    for index = 0, 2 do
+      graphics.circle(aw / 2, ah / 2,
+        math.max(0, radius - index * 13),
+        {1, 1, 1, (1 - burst) * (0.5 - index * 0.12)},
+        2 - index * 0.4)
     end
+  end
+
+  if progress > Data.rules.death_result_start then
+    local fade = math.min((progress - Data.rules.death_result_start) /
+      (1 - Data.rules.death_result_start), 1)
+    graphics.rectangle(aw / 2, ah / 2, aw, ah, nil, nil,
+      {0, 0, 0, fade * 0.28})
+  end
+
+  local burst_flash = math.max(0, 1 - math.abs(
+    motion_progress - Data.rules.death_pull_end) / 0.055)
+  local flash = math.max(hit_flash * 0.72, burst_flash * 0.48)
+  if flash > 0 then
+    graphics.rectangle(aw / 2, ah / 2, aw, ah, nil, nil,
+      {1, 1, 1, flash})
   end
 end
 
@@ -118,4 +134,17 @@ function HUD:draw_revive(cost)
   love.graphics.printf(affordable and "REVIVE  $" .. cost or
     "R  RESTART", 0, Data.rules.revive_button_y - 6, aw, "center")
   love.graphics.pop()
+end
+
+function HUD:draw_revive_transition(progress)
+  local fade = 1 - math.min(progress * 2.5, 1)
+  if fade > 0 then
+    graphics.rectangle(aw / 2, ah / 2, aw, ah, nil, nil,
+      {0, 0, 0, fade * 0.62})
+  end
+  local flash = math.max(0, 1 - math.abs(progress - 0.12) / 0.08)
+  if flash > 0 then
+    graphics.rectangle(aw / 2, ah / 2, aw, ah, nil, nil,
+      {0, 240 / 255, 1, flash * 0.2})
+  end
 end

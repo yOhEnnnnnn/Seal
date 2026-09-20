@@ -37,22 +37,20 @@ function Game:reset_run()
   self:reset_kill_feedback()
   self.elapsed_time = 0
   self.difficulty_level = 0
-  self.gold_fraction = 0
   self.score, self.state = 0, "playing"
   self.revive_count = 0
   self.death_transition_time = 0
+  self.revive_transition_time = 0
   self.boss_level = 0
   self.next_boss_score = EnemyConfig.boss_score_base
   self.pending_boss_level = nil
   self.coins = Data.rules.starting_coins
   self.upgrades = {
-    gold_gain = 0,
-    critical = 0,
-    luck = 0,
     hit_power = 0,
     ball_count = 0,
     momentum = 0,
-    fire_rate = 0,
+    ball_speed = 0,
+    focus = 0,
   }
   self.enemy_traits = {haste = 0, armor = 0, fission = 0}
   self.arena = Arena(self)
@@ -68,12 +66,7 @@ function Game:enemy_killed(enemy)
   local kill_score = enemy and (enemy.kill_score or base_score) or 1
   self.score = self.score + kill_score
 
-  local gold_multiplier = 1 +
-    self.upgrades.gold_gain * Data.upgrades.gold_bonus_per_level
-  self.gold_fraction = self.gold_fraction + base_score * gold_multiplier
-  local gold = math.floor(self.gold_fraction)
-  self.gold_fraction = self.gold_fraction - gold
-  self:add_coins(gold)
+  self:add_coins(base_score)
   self:queue_kill_feedback(enemy)
   self:check_boss_spawn()
 
@@ -133,6 +126,8 @@ function Game:fail()
   if self.state ~= "playing" then return end
   self.state = "dying"
   self.death_transition_time = 0
+  self.arena:start_death_transition()
+  self.audio:play("death_snap")
 end
 
 function Game:get_revive_cost()
@@ -147,7 +142,9 @@ function Game:revive()
   self.coins = self.coins - cost
   self.revive_count = self.revive_count + 1
   self.arena:revive()
-  self.state = "playing"
+  self.revive_transition_time = 0
+  self.state = "reviving"
+  self.audio:play("revive")
   return true
 end
 
@@ -163,7 +160,8 @@ end
 
 function Game:update_mouse_cursor()
   local mouse_x = self.canvas:to_canvas_position(love.mouse.getPosition())
-  love.mouse.setVisible(self.state ~= "playing" or not mouse_x or mouse_x > aw)
+  local combat_view = self.state == "playing" or self.state == "reviving"
+  love.mouse.setVisible(not combat_view or not mouse_x or mouse_x > aw)
 end
 
 function Game:update(dt)
@@ -184,11 +182,24 @@ function Game:update(dt)
     self.death_transition_time = math.min(
       self.death_transition_time + dt,
       Data.rules.death_transition_duration)
+    self.arena:update_death_transition(
+      self.death_transition_time / Data.rules.death_transition_duration, dt)
     if self.death_transition_time == Data.rules.death_transition_duration then
       self.state = "revive"
     end
+  elseif self.state == "reviving" then
+    self.revive_transition_time = math.min(
+      self.revive_transition_time + dt,
+      Data.rules.revive_transition_duration)
+    self.arena:update_revive_transition(
+      self.revive_transition_time / Data.rules.revive_transition_duration, dt)
+    if self.revive_transition_time == Data.rules.revive_transition_duration then
+      self.arena:finish_revive_transition()
+      self.state = "playing"
+    end
   end
-  if self.state == "playing" or self.state == "dying" then self.camera:update(dt)
+  if self.state == "playing" or self.state == "dying" or
+      self.state == "reviving" then self.camera:update(dt)
   else self.camera:reset() end
 end
 
@@ -214,7 +225,8 @@ function Game:draw_scene()
     Data.rules.death_transition_duration
   if self.state == "playing" then
     self.hud:draw(x, y)
-  elseif self.state == "dying" and death_progress >= 0.5 then
+  elseif self.state == "dying" and
+      death_progress >= Data.rules.death_result_start then
     self.hud:draw_revive(self:get_revive_cost())
   elseif self.state == "revive" then
     self.hud:draw_revive(self:get_revive_cost())
@@ -222,6 +234,9 @@ function Game:draw_scene()
   self.sidebar:draw(x, y)
   if self.state == "dying" then
     self.hud:draw_death_transition(death_progress)
+  elseif self.state == "reviving" then
+    self.hud:draw_revive_transition(
+      self.revive_transition_time / Data.rules.revive_transition_duration)
   end
 end
 

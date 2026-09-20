@@ -295,20 +295,134 @@ function Arena:update(dt, aim_x, aim_y)
   self:update_enemy_spawning(dt)
 
   self.enemies:update(dt, self.player, self.enemies)
-  if self.player.dead then self.game:fail() end
+  if self.player.dead then
+    self.game:fail()
+    self.enemies:remove_dead()
+    return
+  end
+  local active_projectiles = #self.projectiles
   self.projectiles:update(dt, self.enemies)
+  if active_projectiles > 0 and #self.projectiles == 0 then
+    self.player:on_volley_ready()
+  end
   self.effects:update(dt, self.enemies)
   self.enemies:remove_dead()
   self:spawn_pending_boss()
   self:spawn_pending_fissions()
 
 end
+
+local function smoothstep(value)
+  local clamped = math.max(0, math.min(value, 1))
+  return clamped * clamped * (3 - 2 * clamped)
+end
+
+function Arena:start_death_transition()
+  local player = self.player
+  local max_distance = math.sqrt((aw / 2) ^ 2 + (ah / 2) ^ 2)
+  self.death_burst_started = false
+  for _, enemy in ipairs(self.enemies) do
+    local dx, dy = enemy.x - player.x, enemy.y - player.y
+    local distance = math.sqrt(dx * dx + dy * dy)
+    enemy.death_distance = distance
+    enemy.death_angle = distance > 0 and math.atan2(dy, dx) or
+      love.math.random() * math.pi * 2
+    enemy.death_order = math.min(distance / max_distance, 1)
+    enemy.death_phase = love.math.random() * math.pi * 2
+    enemy.death_offset_x, enemy.death_offset_y = 0, 0
+  end
+  for _, projectile in ipairs(self.projectiles) do
+    projectile.death_start_x = projectile.x
+    projectile.death_start_y = projectile.y
+  end
+  for index = 1, 18 do
+    local angle = index / 18 * math.pi * 2 + love.math.random() * 0.18
+    self.effects:add(HitParticle{
+      x = player.x,
+      y = player.y,
+      r = angle,
+      speed = 75 + love.math.random() * 110,
+      duration = 0.32 + love.math.random() * 0.28,
+      width = 3 + love.math.random() * 4,
+      color = index % 3 == 0 and {0, 240 / 255, 1, 1} or
+        {1, 1, 1, 1},
+    })
+  end
+end
+
+function Arena:update_death_transition(progress, dt)
+  local player = self.player
+  local hit_stop_ratio = Data.rules.death_hit_stop /
+    Data.rules.death_transition_duration
+  local motion_progress = math.max(0,
+    (progress - hit_stop_ratio) / (1 - hit_stop_ratio))
+  local pull = smoothstep(motion_progress / Data.rules.death_pull_end)
+  for _, projectile in ipairs(self.projectiles) do
+    projectile.x = projectile.death_start_x +
+      (player.x - projectile.death_start_x) * pull
+    projectile.y = projectile.death_start_y +
+      (player.y - projectile.death_start_y) * pull
+  end
+
+  if motion_progress >= Data.rules.death_pull_end and
+      not self.death_burst_started then
+    self.death_burst_started = true
+    self.projectiles:clear()
+    self.game.camera:spring_shake(5.5, 0)
+    self.game.audio:play("death_burst")
+    for index = 1, 24 do
+      local angle = love.math.random() * math.pi * 2
+      self.effects:add(HitParticle{
+        x = player.x,
+        y = player.y,
+        r = angle,
+        speed = 120 + love.math.random() * 150,
+        duration = 0.22 + love.math.random() * 0.24,
+        width = 4 + love.math.random() * 5,
+        color = index % 4 == 0 and {0, 240 / 255, 1, 1} or
+          {1, 1, 1, 1},
+      })
+    end
+  end
+
+  for _, enemy in ipairs(self.enemies) do
+    if enemy.death_distance then
+      local scale
+      local sway = 0
+      local wave = 0
+      if motion_progress < Data.rules.death_pull_end then
+        scale = 1 - pull * 0.22
+      else
+        wave = smoothstep((motion_progress - Data.rules.death_pull_end -
+          enemy.death_order * Data.rules.death_wave_delay) /
+            Data.rules.death_wave_duration)
+        scale = 0.78 + (Data.rules.death_wave_scale - 0.78) * wave
+        sway = math.sin(wave * math.pi) * Data.rules.death_wave_sway *
+          math.sin(enemy.death_phase + wave * 5)
+      end
+      local cosine, sine = math.cos(enemy.death_angle),
+        math.sin(enemy.death_angle)
+      local target_x = player.x + cosine * enemy.death_distance * scale -
+        sine * sway
+      local target_y = player.y + sine * enemy.death_distance * scale +
+        cosine * sway
+      enemy.death_offset_x = target_x - enemy.x
+      enemy.death_offset_y = target_y - enemy.y
+      enemy.death_scale = motion_progress < Data.rules.death_pull_end and
+        1 - pull * 0.14 or 1 + math.sin(wave * math.pi) * 0.42
+      enemy.death_rotation = math.sin(enemy.death_phase) * wave * 1.1
+    end
+  end
+  if motion_progress > 0 then self.effects:update(dt, self.enemies) end
+end
+
 function Arena:revive()
   local player = self.player
   player.dead = false
   player.hp = player.max_hp
   player.hit_time = 0
   player.invincibility_time = Data.rules.revive_invincibility
+  player.revive_progress = 0
 
   local radius_squared = Data.rules.revive_clear_radius ^ 2
   for _, enemy in ipairs(self.enemies) do
@@ -316,10 +430,53 @@ function Arena:revive()
     if dx * dx + dy * dy <= radius_squared then
       enemy.removed_without_reward = true
       enemy:die()
+    else
+      enemy.revive_start_offset_x = enemy.death_offset_x or 0
+      enemy.revive_start_offset_y = enemy.death_offset_y or 0
+      enemy.death_distance = nil
+      enemy.revive_start_scale = enemy.death_scale or 1
+      enemy.revive_start_rotation = enemy.death_rotation or 0
     end
   end
   self.enemies:remove_dead()
   self.effects:add(RevivePulse{x = player.x, y = player.y})
+  self.game.camera:spring_shake(3.5, math.pi)
+  for index = 1, 16 do
+    local angle = index / 16 * math.pi * 2 + love.math.random() * 0.12
+    self.effects:add(HitParticle{
+      x = player.x,
+      y = player.y,
+      r = angle,
+      speed = 80 + love.math.random() * 90,
+      duration = 0.25 + love.math.random() * 0.2,
+      width = 3 + love.math.random() * 4,
+      color = index % 3 == 0 and {1, 1, 1, 1} or
+        {0, 240 / 255, 1, 1},
+    })
+  end
+end
+
+function Arena:update_revive_transition(progress, dt)
+  local eased = 1 - (1 - progress) ^ 3
+  self.player.revive_progress = progress
+  for _, enemy in ipairs(self.enemies) do
+    local start_scale = enemy.revive_start_scale or 1
+    enemy.death_offset_x = (enemy.revive_start_offset_x or 0) * (1 - eased)
+    enemy.death_offset_y = (enemy.revive_start_offset_y or 0) * (1 - eased)
+    enemy.death_scale = start_scale + (1 - start_scale) * eased
+    enemy.death_rotation = (enemy.revive_start_rotation or 0) * (1 - eased)
+  end
+  self.effects:update(dt, self.enemies)
+end
+
+function Arena:finish_revive_transition()
+  self.player.revive_progress = nil
+  for _, enemy in ipairs(self.enemies) do
+    enemy.death_offset_x, enemy.death_offset_y = nil, nil
+    enemy.death_scale, enemy.death_rotation = nil, nil
+    enemy.revive_start_offset_x, enemy.revive_start_offset_y = nil, nil
+    enemy.revive_start_scale, enemy.revive_start_rotation = nil, nil
+  end
 end
 
 function Arena:draw_crosshair(mouse_x, mouse_y)
@@ -346,7 +503,27 @@ function Arena:draw_crosshair(mouse_x, mouse_y)
     mouse_x + half - corner, mouse_y + half)
   love.graphics.line(mouse_x + half, mouse_y + half,
     mouse_x + half, mouse_y + half - corner)
+  if #self.projectiles > 0 then
+    local momentum, radius = self:get_convergence_stats()
+    love.graphics.setColor(0, 240 / 255, 1,
+      0.18 + math.min(momentum / 30, 0.28))
+    love.graphics.circle("line", mouse_x, mouse_y, radius)
+  end
   love.graphics.pop()
+end
+
+function Arena:get_convergence_stats()
+  local momentum = 0
+  for _, projectile in ipairs(self.projectiles) do
+    momentum = momentum + projectile.momentum
+  end
+  local radius = math.min(Data.player.convergence_max_radius,
+    Data.player.convergence_base_radius + math.sqrt(momentum) *
+      Data.player.convergence_radius_per_sqrt_momentum +
+      self.game.upgrades.focus * Data.upgrades.focus_radius_per_level)
+  local damage = Data.player.convergence_base_damage + math.floor(
+    momentum / Data.player.convergence_momentum_per_damage)
+  return momentum, radius, damage
 end
 
 function Arena:get_aimed_enemy(x, y)
@@ -373,5 +550,52 @@ function Arena:draw(mouse_x, mouse_y)
 end
 
 function Arena:mousepressed(x, y)
+  if #self.projectiles > 0 then
+    self:converge_volley(x, y)
+    return "converged"
+  end
   self.player:try_attack(x, y, self.projectiles, self.effects)
+end
+
+function Arena:converge_volley(x, y)
+  if #self.projectiles == 0 then return false end
+  local momentum, radius, damage = self:get_convergence_stats()
+  local origins = {}
+  local score_bonus = math.floor(momentum / 4)
+  for _, projectile in ipairs(self.projectiles) do
+    origins[#origins + 1] = {x = projectile.x, y = projectile.y}
+    projectile.dead = true
+  end
+  self.projectiles:remove_dead()
+
+  local source = {score_bonus = score_bonus}
+  for _, enemy in ipairs(self.enemies) do
+    local dx, dy = enemy.x - x, enemy.y - y
+    local reach = radius + math.max(enemy.width, enemy.height) / 2
+    if not enemy.dead and dx * dx + dy * dy <= reach * reach then
+      enemy:hit(damage, source)
+      enemy:spawn_hit_particles(math.atan2(dy, dx) + math.pi,
+        {0, 240 / 255, 1, 1})
+    end
+  end
+
+  self.effects:add(ConvergenceBurst{
+    x = x,
+    y = y,
+    origins = origins,
+    radius = radius,
+  })
+  if self.game.audio then self.game.audio:play("convergence") end
+  local angle = math.atan2(y - self.player.y, x - self.player.x)
+  if self.game.camera then self.game.camera:spring_shake(2.4, angle) end
+  self.player:on_volley_ready()
+  return true, momentum, radius, damage
+end
+
+function Arena:end_volley()
+  if #self.projectiles == 0 then return false end
+  for _, projectile in ipairs(self.projectiles) do projectile:shatter() end
+  self.projectiles:remove_dead()
+  self.player:on_volley_ready()
+  return true
 end

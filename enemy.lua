@@ -150,19 +150,24 @@ end
 
 function Enemy:draw()
   if self.dead then return end
+  local draw_x = self.x + (self.death_offset_x or 0)
+  local draw_y = self.y + (self.death_offset_y or 0)
   love.graphics.push("all")
-  love.graphics.translate(self.x + EnemyConfig.depth_offset,
-    self.y + EnemyConfig.depth_offset)
-  love.graphics.rotate(self.r)
-  love.graphics.scale(self.hit_spring.x, self.hit_spring.x)
+  love.graphics.translate(draw_x + EnemyConfig.depth_offset,
+    draw_y + EnemyConfig.depth_offset)
+  love.graphics.rotate(self.r + (self.death_rotation or 0))
+  local death_scale = self.death_scale or 1
+  love.graphics.scale(self.hit_spring.x * death_scale,
+    self.hit_spring.x * death_scale)
   graphics.rectangle(0, 0, self.width, self.height, 1, 1,
     self:get_depth_color())
   love.graphics.pop()
 
   love.graphics.push("all")
-  love.graphics.translate(self.x, self.y)
-  love.graphics.rotate(self.r)
-  love.graphics.scale(self.hit_spring.x, self.hit_spring.x)
+  love.graphics.translate(draw_x, draw_y)
+  love.graphics.rotate(self.r + (self.death_rotation or 0))
+  love.graphics.scale(self.hit_spring.x * death_scale,
+    self.hit_spring.x * death_scale)
   graphics.rectangle(0, 0, self.width, self.height, 1, 1, self:get_color())
   love.graphics.pop()
 end

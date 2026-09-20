@@ -2,8 +2,7 @@
 return {
   max_hp = 1,
   size = 9,
-  fire_interval = 0.3,
-  projectile_lifetime = 4,
+  projectile_lifetime = 2.5,
   volley_angle = math.pi / 24,
   projectile_speed = 160,
   projectile_hit_power = 1,
@@ -12,6 +11,13 @@ return {
   projectile_height = 4,
   projectile_depth_offset = 1.5,
   hit_duration = 0.12,
+  ready_flash_duration = 0.28,
+  convergence_base_radius = 20,
+  convergence_radius_per_sqrt_momentum = 6,
+  convergence_max_radius = 72,
+  convergence_base_damage = 1,
+  convergence_momentum_per_damage = 5,
+  convergence_duration = 0.32,
   attack_shake = 0.3,
   hit_shake = 4,
 }
