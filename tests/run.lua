@@ -148,7 +148,8 @@ end)
 
 test("an endless run starts in combat without level targets", function()
   local game = Game()
-  assert(game.state == "playing" and #game.arena.enemies == 4)
+  assert(game.state == "playing" and
+    #game.arena.enemies > game.arena:get_spawn_slot_count() * 0.75)
   for _, target in ipairs(game.arena.enemies) do
     assert(target.x < 0 or target.x > aw or target.y < 0 or target.y > ah)
   end
@@ -315,29 +316,6 @@ test("enemies face one edge toward the player and move straight", function()
     (game.arena.player.x - x) / (game.arena.player.y - y))
 end)
 
-test("enemy separation prevents square stacking", function()
-  local game = Game()
-  game.arena.enemies:clear()
-  game.arena.spawn_timer = 100
-  local first = game.arena:add_enemy(60, 60, {v = 0})
-  local second = game.arena:add_enemy(60, 60, {v = 0})
-  game.arena:update(0)
-  local dx, dy = second.x - first.x, second.y - first.y
-  local minimum = first:get_separation_radius() +
-    second:get_separation_radius()
-  near(math.sqrt(dx * dx + dy * dy), minimum)
-end)
-
-test("rear enemies cannot push the front enemy toward the player", function()
-  local game = Game()
-  game.arena.enemies:clear()
-  game.arena.spawn_timer = 100
-  local front = game.arena:add_enemy(100, game.arena.player.y, {v = 0})
-  local rear = game.arena:add_enemy(85, game.arena.player.y, {v = 0})
-  game.arena:update(0)
-  assert(front.x == 100 and rear.x < 85)
-end)
-
 test("enemy remaining hits are represented by opacity", function()
   local target = Enemy{x = 100, y = 100, max_hits = 4}
   assert(target.hp == nil and target.max_hp == nil)
@@ -347,6 +325,45 @@ test("enemy remaining hits are represented by opacity", function()
   target.hits_remaining = 1
   near(target:get_color()[4], 0.1375)
   near(target:get_depth_color()[4], 0.11)
+end)
+
+test("broken waves stay spaced while varying their formation", function()
+  local game = Game()
+  game.arena = Arena(game)
+  game.arena:start()
+  assert(#game.arena.enemies > game.arena:get_spawn_slot_count() * 0.75)
+
+  for first_index = 1, #game.arena.enemies - 1 do
+    local first = game.arena.enemies[first_index]
+    for second_index = first_index + 1, #game.arena.enemies do
+      local second = game.arena.enemies[second_index]
+      local dx, dy = second.x - first.x, second.y - first.y
+      assert(dx * dx + dy * dy >= EnemyConfig.width ^ 2,
+        math.sqrt(dx * dx + dy * dy) .. " between " ..
+          first_index .. " and " .. second_index)
+    end
+  end
+end)
+
+test("entering waves settle into a circular formation", function()
+  local game = Game()
+  local speed_sum = 0
+  for _, enemy in ipairs(game.arena.enemies) do
+    speed_sum = speed_sum +
+      (enemy.formation_start_radius - enemy.formation_target_radius) /
+        enemy.formation_duration
+  end
+  near(speed_sum / #game.arena.enemies, game.arena:get_enemy_speed())
+  local target = game.arena.enemies[1]
+  target:update(target.formation_duration / 2,
+    game.arena.player, game.arena.enemies)
+  near(target.formation_radius,
+    (target.formation_start_radius + EnemyConfig.spawn_circle_radius) / 2)
+  target:update(target.formation_duration / 2,
+    game.arena.player, game.arena.enemies)
+  local dx = target.x - game.arena.player.x
+  local dy = target.y - game.arena.player.y
+  near(math.sqrt(dx * dx + dy * dy), EnemyConfig.spawn_circle_radius)
 end)
 
 test("enemy traits modify newly spawned enemies", function()
@@ -427,24 +444,27 @@ test("enemy spawning accelerates to a readable minimum interval", function()
   game.elapsed_time = 60
   game.arena.spawn_timer = 0
   game.arena:update_enemy_spawning(0)
-  near(game.arena.spawn_timer, EnemyConfig.spawn_interval * 0.88)
+  near(game.arena.spawn_timer, game.arena:get_spawn_interval())
+  assert(#game.arena.enemies > game.arena:get_spawn_slot_count() * 0.75)
 
   game.arena.enemies:clear()
   game.difficulty_level = 100
   game.elapsed_time = 3000
   game.arena.spawn_timer = 0
   game.arena:update_enemy_spawning(0)
-  near(game.arena.spawn_timer, EnemyConfig.min_spawn_interval)
+  near(game.arena.spawn_timer, game.arena:get_spawn_interval())
+  assert(game.arena.spawn_timer >= EnemyConfig.spawn_spacing /
+    game.arena:get_enemy_speed())
 end)
 
-test("late difficulty spawns enemy groups instead of only faster enemies", function()
+test("late difficulty still spawns one broken wave at a time", function()
   local game = Game()
   game.arena.enemies:clear()
-  game.difficulty_level = EnemyConfig.spawn_batch_levels * 3
+  game.difficulty_level = 100
   game.elapsed_time = 600
   game.arena.spawn_timer = 0
   game.arena:update_enemy_spawning(0)
-  assert(#game.arena.enemies == EnemyConfig.max_spawn_batch)
+  assert(#game.arena.enemies > game.arena:get_spawn_slot_count() * 0.75)
 end)
 
 test("fission creates two half-hit children without recursive splitting", function()
@@ -462,6 +482,9 @@ test("fission creates two half-hit children without recursive splitting", functi
     assert(not child.fission and
       child.base_score == 1)
   end
+  local dx = game.arena.enemies[2].x - game.arena.enemies[1].x
+  local dy = game.arena.enemies[2].y - game.arena.enemies[1].y
+  assert(math.sqrt(dx * dx + dy * dy) >= EnemyConfig.width)
 end)
 
 test("one enemy collision kills the player and ends the enemy", function()
@@ -555,6 +578,22 @@ test("ordinary kill scoring and coins settle once", function()
   assert(game.score == 106 and game.coins == 13)
   game:update(0.01)
   assert(game.score == 106 and game.coins == 13)
+end)
+
+test("same-frame kills merge into one directional camera impulse", function()
+  local game = Game()
+  local calls, intensity, angle = 0
+  game.camera = {spring_shake = function(_, next_intensity, next_angle)
+    calls, intensity, angle = calls + 1, next_intensity, next_angle
+  end}
+  local player = game.arena.player
+  game:enemy_killed{x = player.x + 40, y = player.y, base_score = 1}
+  game:enemy_killed{x = player.x + 60, y = player.y, base_score = 1}
+  game:flush_kill_feedback()
+  assert(calls == 1 and intensity > Data.camera.kill_recoil_base)
+  near(angle, 0)
+  game:flush_kill_feedback()
+  assert(calls == 1)
 end)
 
 test("enemy hits reflect the ball and build momentum", function()

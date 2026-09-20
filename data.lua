@@ -4,6 +4,7 @@ require("data.enemies")
 return {
   audio = require("data.audio"),
   bullets = require("data.bullets"),
+  camera = require("data.camera"),
   enemies = EnemyConfig,
   player = require("data.player"),
   rules = require("data.rules"),

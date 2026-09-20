@@ -34,6 +34,7 @@ end
 
 function Game:reset_run()
   self.camera:reset()
+  self:reset_kill_feedback()
   self.elapsed_time = 0
   self.difficulty_level = 0
   self.gold_fraction = 0
@@ -73,9 +74,49 @@ function Game:enemy_killed(enemy)
   local gold = math.floor(self.gold_fraction)
   self.gold_fraction = self.gold_fraction - gold
   self:add_coins(gold)
+  self:queue_kill_feedback(enemy)
   self:check_boss_spawn()
 
   return true
+end
+
+function Game:reset_kill_feedback()
+  self.kill_feedback_count = 0
+  self.kill_feedback_weight = 0
+  self.kill_feedback_x = 0
+  self.kill_feedback_y = 0
+  self.kill_feedback_angle = 0
+  self.kill_feedback_has_boss = false
+end
+
+function Game:queue_kill_feedback(enemy)
+  if not enemy or not enemy.x or not enemy.y then return end
+  local weight = enemy.is_boss and Data.camera.kill_weight_max or
+    math.min(enemy.base_score or 1, Data.camera.kill_weight_max)
+  self.kill_feedback_count = self.kill_feedback_count + 1
+  self.kill_feedback_weight = self.kill_feedback_weight + weight
+  self.kill_feedback_x = self.kill_feedback_x + enemy.x * weight
+  self.kill_feedback_y = self.kill_feedback_y + enemy.y * weight
+  self.kill_feedback_angle = math.atan2(
+    enemy.y - self.arena.player.y, enemy.x - self.arena.player.x)
+  self.kill_feedback_has_boss = self.kill_feedback_has_boss or enemy.is_boss
+end
+
+function Game:flush_kill_feedback()
+  if self.kill_feedback_count == 0 then return end
+  local x = self.kill_feedback_x / self.kill_feedback_weight
+  local y = self.kill_feedback_y / self.kill_feedback_weight
+  local dx, dy = x - self.arena.player.x, y - self.arena.player.y
+  local angle = dx * dx + dy * dy > 1 and math.atan2(dy, dx) or
+    self.kill_feedback_angle
+  local intensity = self.kill_feedback_has_boss and
+    Data.camera.boss_kill_recoil or math.min(
+      Data.camera.kill_recoil_max,
+      Data.camera.kill_recoil_base +
+        math.sqrt(self.kill_feedback_weight - 1) *
+          Data.camera.kill_recoil_growth)
+  self.camera:spring_shake(intensity, angle)
+  self:reset_kill_feedback()
 end
 
 function Game:check_boss_spawn()
@@ -138,6 +179,7 @@ function Game:update(dt)
       aim_x, aim_y = self.camera:to_world(screen_x, screen_y)
     end
     self.arena:update(dt, aim_x, aim_y)
+    self:flush_kill_feedback()
   elseif self.state == "dying" then
     self.death_transition_time = math.min(
       self.death_transition_time + dt,

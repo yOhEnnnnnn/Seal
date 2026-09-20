@@ -33,6 +33,16 @@ function Enemy:update(dt, player, enemies)
   self.hit_time = math.max(self.hit_time - dt, 0)
   if self.stationary then
     self:stop()
+  elseif self.formation_time and
+      self.formation_time < self.formation_duration then
+    self.formation_time = math.min(
+      self.formation_time + dt, self.formation_duration)
+    local progress = self.formation_time / self.formation_duration
+    self.formation_radius = self.formation_start_radius +
+      (self.formation_target_radius - self.formation_start_radius) * progress
+    self.x = player.x + math.cos(self.formation_angle) * self.formation_radius
+    self.y = player.y + math.sin(self.formation_angle) * self.formation_radius
+    self.r = self.formation_angle + math.pi
   else
     local dx, dy = player.x - self.x, player.y - self.y
     local distance = math.sqrt(dx * dx + dy * dy)
@@ -53,44 +63,6 @@ function Enemy:update(dt, player, enemies)
     player:hit(self.contact_damage)
     self.reached_center = true
     self.dead = true
-  end
-end
-
-function Enemy:get_separation_radius()
-  return math.sqrt(self.width ^ 2 + self.height ^ 2) / 2 +
-    EnemyConfig.separation_padding / 2
-end
-
-function Enemy:separate_from(other, target_x, target_y)
-  if self.dead or other.dead then return end
-  local dx, dy = other.x - self.x, other.y - self.y
-  local minimum = self:get_separation_radius() +
-    other:get_separation_radius()
-  local distance_squared = dx * dx + dy * dy
-  if distance_squared >= minimum * minimum then return end
-
-  local distance = math.sqrt(distance_squared)
-  local nx, ny
-  if distance > 0 then
-    nx, ny = dx / distance, dy / distance
-  else
-    local angle = (self.id + other.id) * 2.3999632297287
-    nx, ny = math.cos(angle), math.sin(angle)
-  end
-
-  local overlap = minimum - distance
-  local self_dx, self_dy = self.x - target_x, self.y - target_y
-  local other_dx, other_dy = other.x - target_x, other.y - target_y
-  local self_distance = self_dx * self_dx + self_dy * self_dy
-  local other_distance = other_dx * other_dx + other_dy * other_dy
-  if self_distance < other_distance then
-    other.x, other.y = other.x + nx * overlap, other.y + ny * overlap
-  elseif other_distance < self_distance then
-    self.x, self.y = self.x - nx * overlap, self.y - ny * overlap
-  else
-    local offset = overlap / 2
-    self.x, self.y = self.x - nx * offset, self.y - ny * offset
-    other.x, other.y = other.x + nx * offset, other.y + ny * offset
   end
 end
 

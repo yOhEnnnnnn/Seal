@@ -12,6 +12,6 @@ return {
   projectile_height = 4,
   projectile_depth_offset = 1.5,
   hit_duration = 0.12,
-  attack_shake = 2,
+  attack_shake = 0.3,
   hit_shake = 4,
 }

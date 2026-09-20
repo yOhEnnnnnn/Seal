@@ -5,7 +5,7 @@ function Arena:init(game)
   self.colors = game.colors
   self.spawn_interval = EnemyConfig.spawn_interval
   self.spawn_timer = EnemyConfig.opening_spawn_interval
-  self.next_spawn_side = 1
+  self.spawn_wave_index = 0
   self.max_enemies = EnemyConfig.max_enemies
   self.player = Player{
     x = aw / 2,
@@ -23,28 +23,70 @@ function Arena:init(game)
 end
 
 function Arena:start()
-  for _ = 1, EnemyConfig.initial_per_side do
-    for side = 1, 4 do self:spawn_enemy(side) end
-  end
+  self:spawn_enemy_wave()
 end
 
-function Arena:spawn_enemy(side)
+function Arena:get_spawn_slot_count()
+  return EnemyConfig.spawn_angular_slots
+end
+
+function Arena:wave_has_enemy(slot)
+  return (slot + self.spawn_wave_index * 3) %
+    EnemyConfig.spawn_gap_period ~= 0
+end
+
+function Arena:get_spawn_position(slot)
+  local outside = EnemyConfig.spawn_outside_margin
+  local step = math.pi * 2 / self:get_spawn_slot_count()
+  local phase = self.spawn_wave_index % 2 * step / 2
+  local angle = slot * step + phase + math.sin(
+    slot * 0.73 + self.spawn_wave_index * 1.7) *
+      EnemyConfig.spawn_angle_jitter
+  local cosine, sine = math.cos(angle), math.sin(angle)
+  local horizontal = (aw / 2 + outside) /
+    math.max(math.abs(cosine), 0.0001)
+  local vertical = (ah / 2 + outside) /
+    math.max(math.abs(sine), 0.0001)
+  local radius = math.min(horizontal, vertical)
+  return self.player.x + cosine * radius,
+    self.player.y + sine * radius, angle, radius
+end
+
+function Arena:spawn_enemy(slot, formation_duration)
   if #self.enemies >= self.max_enemies then return end
 
-  local outside = EnemyConfig.spawn_outside_margin
-  local corner = EnemyConfig.spawn_corner_margin
-  local x, y
-  if side == 1 then
-    x, y = -outside, love.math.random(corner, ah - corner)
-  elseif side == 2 then
-    x, y = aw + outside, love.math.random(corner, ah - corner)
-  elseif side == 3 then
-    x, y = love.math.random(corner, aw - corner), -outside
-  else
-    x, y = love.math.random(corner, aw - corner), ah + outside
-  end
+  local x, y, angle, radius = self:get_spawn_position(slot)
+  return self:add_enemy(x, y, {
+    formation_angle = angle,
+    formation_radius = radius,
+    formation_start_radius = radius,
+    formation_target_radius = EnemyConfig.spawn_circle_radius,
+    formation_duration = formation_duration,
+    formation_time = 0,
+  })
+end
 
-  self:add_enemy(x, y)
+function Arena:spawn_enemy_wave()
+  local radius_sum, count = 0, 0
+  for slot = 0, self:get_spawn_slot_count() - 1 do
+    if self:wave_has_enemy(slot) then
+      local _, _, _, radius = self:get_spawn_position(slot)
+      radius_sum = radius_sum + radius
+      count = count + 1
+    end
+  end
+  local formation_duration = math.max(
+    (radius_sum / count - EnemyConfig.spawn_circle_radius) /
+      self:get_enemy_speed(), 0.01)
+  local spawned = 0
+  for slot = 0, self:get_spawn_slot_count() - 1 do
+    if self:wave_has_enemy(slot) then
+      local enemy = self:spawn_enemy(slot, formation_duration)
+      if enemy then spawned = spawned + 1 end
+    end
+  end
+  self.spawn_wave_index = self.spawn_wave_index + 1
+  return spawned
 end
 
 function Arena:get_enemy_growth()
@@ -83,6 +125,14 @@ function Arena:get_base_enemy_hits()
     progress * (EnemyConfig.max_hits - EnemyConfig.opening_max_hits))
 end
 
+function Arena:get_enemy_speed(growth, haste)
+  growth = growth or self:get_enemy_growth()
+  haste = haste or self.game.enemy_traits.haste
+  return EnemyConfig.move_speed * growth.speed_multiplier *
+    (1 + math.min(haste * EnemyConfig.haste_per_level,
+      EnemyConfig.haste_max_bonus))
+end
+
 function Arena:add_enemy(x, y, overrides)
   if #self.enemies >= self.max_enemies then return end
   overrides = overrides or {}
@@ -99,9 +149,7 @@ function Arena:add_enemy(x, y, overrides)
         armor * EnemyConfig.armor_hits_per_level,
         EnemyConfig.armor_max_hits_bonus),
     hits_remaining = overrides.hits_remaining,
-    v = overrides.v or EnemyConfig.move_speed * growth.speed_multiplier *
-      (1 + math.min(haste * EnemyConfig.haste_per_level,
-        EnemyConfig.haste_max_bonus)),
+    v = overrides.v or self:get_enemy_speed(growth, haste),
     contact_damage = overrides.contact_damage or EnemyConfig.contact_damage +
       growth.contact_damage_bonus,
     pressure_speed_bonus = overrides.pressure_speed_bonus or
@@ -110,6 +158,12 @@ function Arena:add_enemy(x, y, overrides)
       EnemyConfig.base_score + haste * EnemyConfig.haste_score +
       armor * EnemyConfig.armor_score + fission * EnemyConfig.fission_score,
     fission = overrides.fission == nil and fission > 0 or overrides.fission,
+    formation_angle = overrides.formation_angle,
+    formation_radius = overrides.formation_radius,
+    formation_start_radius = overrides.formation_start_radius,
+    formation_target_radius = overrides.formation_target_radius,
+    formation_duration = overrides.formation_duration,
+    formation_time = overrides.formation_time,
     color = self.colors.enemy,
     hit_color = self.colors.foreground,
     effects = self.effects,
@@ -215,22 +269,24 @@ function Arena:update_enemy_spawning(dt)
   self.spawn_timer = math.max(self.spawn_timer - dt, 0)
   if self.spawn_timer > 0 or #self.enemies >= self.max_enemies then return end
 
-  local spawn_batch = math.min(EnemyConfig.max_spawn_batch,
-    1 + math.floor(self.game.difficulty_level /
-      EnemyConfig.spawn_batch_levels))
-  for _ = 1, spawn_batch do
-    if #self.enemies >= self.max_enemies then break end
-    self:spawn_enemy(self.next_spawn_side)
-    self.next_spawn_side = self.next_spawn_side % 4 + 1
+  if self:spawn_enemy_wave() > 0 then
+    self.spawn_timer = self:get_spawn_interval()
   end
+end
+
+function Arena:get_spawn_interval()
   local opening_progress = math.min(
     self.game.elapsed_time / EnemyConfig.opening_duration, 1)
   local base_interval = EnemyConfig.opening_spawn_interval +
     (self.spawn_interval - EnemyConfig.opening_spawn_interval) *
       opening_progress
-  self.spawn_timer = math.max(EnemyConfig.min_spawn_interval,
-    base_interval * (1 - self.game.difficulty_level *
-      EnemyConfig.difficulty_spawn_reduction_per_level))
+  local difficulty_interval = base_interval *
+    (1 - self.game.difficulty_level *
+      EnemyConfig.difficulty_spawn_reduction_per_level)
+  local spacing_interval = EnemyConfig.spawn_spacing /
+    self:get_enemy_speed()
+  return math.max(EnemyConfig.min_spawn_interval,
+    difficulty_interval, spacing_interval)
 end
 
 function Arena:update(dt, aim_x, aim_y)
@@ -239,7 +295,6 @@ function Arena:update(dt, aim_x, aim_y)
   self:update_enemy_spawning(dt)
 
   self.enemies:update(dt, self.player, self.enemies)
-  self:separate_enemies()
   if self.player.dead then self.game:fail() end
   self.projectiles:update(dt, self.enemies)
   self.effects:update(dt, self.enemies)
@@ -248,19 +303,6 @@ function Arena:update(dt, aim_x, aim_y)
   self:spawn_pending_fissions()
 
 end
-
-function Arena:separate_enemies()
-  for _ = 1, EnemyConfig.separation_iterations do
-    for first_index = 1, #self.enemies - 1 do
-      local first = self.enemies[first_index]
-      for second_index = first_index + 1, #self.enemies do
-        first:separate_from(self.enemies[second_index],
-          self.player.x, self.player.y)
-      end
-    end
-  end
-end
-
 function Arena:revive()
   local player = self.player
   player.dead = false
