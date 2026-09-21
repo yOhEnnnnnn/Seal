@@ -14,6 +14,10 @@ function Arena:init(game)
     audio = game.audio,
     upgrades = game.upgrades,
   }
+  self.shockwave_charge = 0
+  self.player.on_projectile_bounce = function()
+    self:add_shockwave_charge()
+  end
   self.projectiles = Group()
   self.effects = Group()
   self.enemies = Group{on_remove = function(enemy)
@@ -93,17 +97,21 @@ function Arena:get_enemy_growth()
   local difficulty = self.game.difficulty_level
   local late_levels = math.max(
     difficulty - EnemyConfig.late_growth_start_level, 0)
-  local player_damage_bonus = 0
-  if late_levels > 0 then
-    player_damage_bonus = math.floor(math.max(
-      self.player.base_projectile_hit_power -
-        Data.player.projectile_hit_power, 0) *
-      EnemyConfig.player_damage_hits_ratio)
-  end
+  local upgrades = self.game.upgrades
+  local direct_damage_bonus = math.max(
+    self.player.base_projectile_hit_power -
+      Data.player.projectile_hit_power, 0)
+  local blast_damage_bonus = (upgrades.blast_damage or 0) *
+    Data.upgrades.blast_damage_per_level
+  local player_power_bonus = math.floor(
+    math.max(direct_damage_bonus, blast_damage_bonus) *
+      EnemyConfig.player_damage_hits_ratio +
+    (upgrades.ball_count or 0) * EnemyConfig.player_ball_hits_ratio)
   return {
     hits_bonus = math.floor(
       difficulty / EnemyConfig.difficulty_levels_per_hit) + math.floor(
-        late_levels * EnemyConfig.late_hits_per_level) + player_damage_bonus,
+        late_levels * EnemyConfig.late_hits_per_level) + player_power_bonus,
+    player_power_bonus = player_power_bonus,
     speed_multiplier = 1 + math.min(
       difficulty * EnemyConfig.difficulty_speed_per_level,
       EnemyConfig.difficulty_speed_max_bonus),
@@ -196,7 +204,9 @@ function Arena:spawn_boss(level)
     height = EnemyConfig.boss_size,
     max_hits = EnemyConfig.boss_hits +
       boss_growth * EnemyConfig.boss_hits_per_level +
-      boss_growth * boss_growth * EnemyConfig.boss_hits_quadratic,
+      boss_growth * boss_growth * EnemyConfig.boss_hits_quadratic +
+      self:get_enemy_growth().player_power_bonus *
+        EnemyConfig.boss_player_power_multiplier,
     v = EnemyConfig.move_speed * EnemyConfig.boss_speed_multiplier *
       (1 + math.min(boss_growth * EnemyConfig.boss_speed_per_level,
         EnemyConfig.boss_speed_max_bonus)),
@@ -206,9 +216,11 @@ function Arena:spawn_boss(level)
       EnemyConfig.boss_contact_damage_max),
     base_score = EnemyConfig.boss_score +
       (level - 1) * EnemyConfig.boss_score_per_level,
+    coin_value = EnemyConfig.boss_coin +
+      (level - 1) * EnemyConfig.boss_coin_per_level,
     is_boss = true,
     color = self.colors.enemy,
-    hit_color = self.colors.gold,
+    hit_color = self.colors.boss,
     effects = self.effects,
     audio = self.game.audio,
   })
@@ -256,6 +268,7 @@ function Arena:spawn_pending_fissions()
           v = parent.v,
           contact_damage = parent.contact_damage,
           base_score = EnemyConfig.base_score,
+          coin_value = EnemyConfig.fission_child_coin,
           fission = false,
         })
     end
@@ -344,8 +357,8 @@ function Arena:start_death_transition()
       speed = 75 + love.math.random() * 110,
       duration = 0.32 + love.math.random() * 0.28,
       width = 3 + love.math.random() * 4,
-      color = index % 3 == 0 and {0, 240 / 255, 1, 1} or
-        {1, 1, 1, 1},
+      color = index % 3 == 0 and self.colors.accent or
+        self.colors.foreground,
     })
   end
 end
@@ -379,8 +392,8 @@ function Arena:update_death_transition(progress, dt)
         speed = 120 + love.math.random() * 150,
         duration = 0.22 + love.math.random() * 0.24,
         width = 4 + love.math.random() * 5,
-        color = index % 4 == 0 and {0, 240 / 255, 1, 1} or
-          {1, 1, 1, 1},
+        color = index % 4 == 0 and self.colors.accent or
+          self.colors.foreground,
       })
     end
   end
@@ -420,6 +433,7 @@ function Arena:revive()
   local player = self.player
   player.dead = false
   player.hp = player.max_hp
+  player.balls_loaded = player.ball_count
   player.hit_time = 0
   player.invincibility_time = Data.rules.revive_invincibility
   player.revive_progress = 0
@@ -450,8 +464,8 @@ function Arena:revive()
       speed = 80 + love.math.random() * 90,
       duration = 0.25 + love.math.random() * 0.2,
       width = 3 + love.math.random() * 4,
-      color = index % 3 == 0 and {1, 1, 1, 1} or
-        {0, 240 / 255, 1, 1},
+      color = index % 3 == 0 and self.colors.foreground or
+        self.colors.accent,
     })
   end
 end
@@ -482,8 +496,9 @@ end
 function Arena:draw_crosshair(mouse_x, mouse_y)
   if not mouse_x then return end
   love.graphics.push("all")
-  local color = self:get_aimed_enemy(mouse_x, mouse_y) and
-    self.colors.gold or self.colors.foreground
+  local color = #self.projectiles > 0 and self.colors.accent or
+    (self:get_aimed_enemy(mouse_x, mouse_y) and
+      self.colors.gold or self.colors.foreground)
   love.graphics.setColor(color[1], color[2], color[3], 0.9)
   love.graphics.setLineWidth(1)
   local half, corner = 6, 3
@@ -503,26 +518,72 @@ function Arena:draw_crosshair(mouse_x, mouse_y)
     mouse_x + half - corner, mouse_y + half)
   love.graphics.line(mouse_x + half, mouse_y + half,
     mouse_x + half, mouse_y + half - corner)
-  if #self.projectiles > 0 then
-    local _, radius = self:get_convergence_stats()
-    graphics.circle(mouse_x, mouse_y, radius,
-      {0, 240 / 255, 1, Data.player.convergence_preview_alpha})
-  end
   love.graphics.pop()
 end
 
-function Arena:get_convergence_stats()
+function Arena:get_total_momentum()
   local momentum = 0
   for _, projectile in ipairs(self.projectiles) do
     momentum = momentum + projectile.momentum
   end
-  local radius = math.min(Data.player.convergence_max_radius,
-    Data.player.convergence_base_radius + math.sqrt(momentum) *
-      Data.player.convergence_radius_per_sqrt_momentum +
-      self.game.upgrades.focus * Data.upgrades.focus_radius_per_level)
-  local damage = Data.player.convergence_base_damage + math.floor(
-    momentum / Data.player.convergence_momentum_per_damage)
-  return momentum, radius, damage
+  return momentum
+end
+
+function Arena:add_shockwave_charge(amount)
+  self.shockwave_charge = math.min(
+    self.shockwave_charge + (amount or 1),
+    Data.player.shockwave_charge_required)
+  return self.shockwave_charge
+end
+
+function Arena:is_shockwave_ready()
+  return self.shockwave_charge >= Data.player.shockwave_charge_required
+end
+
+function Arena:activate_shockwave()
+  if not self:is_shockwave_ready() then return false end
+
+  self.shockwave_charge = 0
+  local player = self.player
+  local radius = Data.player.shockwave_radius
+  for _, enemy in ipairs(self.enemies) do
+    local dx, dy = enemy.x - player.x, enemy.y - player.y
+    local reach = radius + math.max(enemy.width, enemy.height) / 2
+    if not enemy.dead and not enemy.is_boss and
+        dx * dx + dy * dy <= reach * reach then
+      enemy.removed_without_reward = true
+      enemy:die()
+    end
+  end
+  self.enemies:remove_dead()
+  self.effects:add(ShockwavePulse{
+    x = player.x,
+    y = player.y,
+    radius = radius,
+  })
+  if self.game.audio then self.game.audio:play("shockwave") end
+  if self.game.camera then self.game.camera:spring_shake(2.2, 0) end
+  return true
+end
+
+function Arena:get_blast_stats(projectile)
+  local momentum = projectile and projectile.momentum or 0
+  local radius = Data.player.blast_base_radius + math.sqrt(momentum) *
+    Data.player.blast_radius_per_sqrt_momentum +
+    self.game.upgrades.blast_radius * Data.upgrades.blast_radius_per_level
+  local damage = Data.player.blast_base_damage +
+    self.game.upgrades.blast_damage * Data.upgrades.blast_damage_per_level +
+    math.floor(momentum / Data.player.blast_momentum_per_damage)
+  return radius, damage
+end
+
+function Arena:draw_blast_previews()
+  for _, projectile in ipairs(self.projectiles) do
+    local radius = self:get_blast_stats(projectile)
+    graphics.circle(projectile.x, projectile.y, radius,
+      graphics.color_with_alpha(
+        self.colors.accent, Data.player.blast_preview_alpha), 1)
+  end
 end
 
 function Arena:get_aimed_enemy(x, y)
@@ -542,6 +603,7 @@ end
 
 function Arena:draw(mouse_x, mouse_y)
   self:draw_crosshair(mouse_x, mouse_y)
+  self:draw_blast_previews()
   self.projectiles:draw()
   self.enemies:draw()
   if not self.player.dead then self.player:draw() end
@@ -549,46 +611,55 @@ function Arena:draw(mouse_x, mouse_y)
 end
 
 function Arena:mousepressed(x, y)
-  if #self.projectiles > 0 then
-    self:converge_volley(x, y)
-    return "converged"
-  end
-  self.player:try_attack(x, y, self.projectiles, self.effects)
+  return self.player:try_attack(x, y, self.projectiles, self.effects)
 end
 
-function Arena:converge_volley(x, y)
+function Arena:detonate_volley()
   if #self.projectiles == 0 then return false end
-  local momentum, radius, damage = self:get_convergence_stats()
-  local origins = {}
-  local score_bonus = math.floor(momentum / 4)
+  local total_momentum = self:get_total_momentum()
+  local blasts = {}
   for _, projectile in ipairs(self.projectiles) do
-    origins[#origins + 1] = {x = projectile.x, y = projectile.y}
+    local radius, damage = self:get_blast_stats(projectile)
+    blasts[#blasts + 1] = {
+      x = projectile.x,
+      y = projectile.y,
+      radius = radius,
+      damage = damage,
+      score_bonus = math.floor(projectile.momentum / 4),
+    }
     projectile.dead = true
   end
   self.projectiles:remove_dead()
 
-  local source = {score_bonus = score_bonus}
   for _, enemy in ipairs(self.enemies) do
-    local dx, dy = enemy.x - x, enemy.y - y
-    local reach = radius + math.max(enemy.width, enemy.height) / 2
-    if not enemy.dead and dx * dx + dy * dy <= reach * reach then
-      enemy:hit(damage, source)
-      enemy:spawn_hit_particles(math.atan2(dy, dx) + math.pi,
-        {0, 240 / 255, 1, 1})
+    local hit_damage, hit_score_bonus, hit_x, hit_y = 0, 0
+    for _, blast in ipairs(blasts) do
+      local dx, dy = enemy.x - blast.x, enemy.y - blast.y
+      local reach = blast.radius + math.max(enemy.width, enemy.height) / 2
+      if dx * dx + dy * dy <= reach * reach and
+          (blast.damage > hit_damage or
+            blast.damage == hit_damage and
+              blast.score_bonus > hit_score_bonus) then
+        hit_damage = blast.damage
+        hit_score_bonus = blast.score_bonus
+        hit_x, hit_y = blast.x, blast.y
+      end
+    end
+    if not enemy.dead and hit_damage > 0 then
+      enemy:hit(hit_damage, {score_bonus = hit_score_bonus})
+      enemy:spawn_hit_particles(
+        math.atan2(enemy.y - hit_y, enemy.x - hit_x) + math.pi,
+        self.colors.accent)
     end
   end
 
-  self.effects:add(ConvergenceBurst{
-    x = x,
-    y = y,
-    origins = origins,
-    radius = radius,
-  })
-  if self.game.audio then self.game.audio:play("convergence") end
-  local angle = math.atan2(y - self.player.y, x - self.player.x)
-  if self.game.camera then self.game.camera:spring_shake(2.4, angle) end
+  for _, blast in ipairs(blasts) do
+    self.effects:add(DetonationBurst(blast))
+  end
+  if self.game.audio then self.game.audio:play("detonation") end
+  if self.game.camera then self.game.camera:spring_shake(2.8, 0) end
   self.player:on_volley_ready()
-  return true, momentum, radius, damage
+  return true, total_momentum, blasts
 end
 
 function Arena:end_volley()

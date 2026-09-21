@@ -2,8 +2,8 @@ local display = require("data.display")
 
 function love.conf(t)
   t.version = "11.3"
-  t.identity = "seal"
-  t.window.title = "Seal"
+  t.identity = "star"
+  t.window.title = "STAR"
   t.window.width = display.window_width
   t.window.height = display.window_height
   t.window.resizable = true

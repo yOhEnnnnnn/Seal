@@ -45,12 +45,13 @@ function Game:reset_run()
   self.next_boss_score = EnemyConfig.boss_score_base
   self.pending_boss_level = nil
   self.coins = Data.rules.starting_coins
+  self.coin_progress = 0
   self.upgrades = {
     hit_power = 0,
     ball_count = 0,
-    momentum = 0,
     ball_speed = 0,
-    focus = 0,
+    blast_radius = 0,
+    blast_damage = 0,
   }
   self.enemy_traits = {haste = 0, armor = 0, fission = 0}
   self.arena = Arena(self)
@@ -66,7 +67,8 @@ function Game:enemy_killed(enemy)
   local kill_score = enemy and (enemy.kill_score or base_score) or 1
   self.score = self.score + kill_score
 
-  self:add_coins(base_score)
+  self:add_coin_progress(
+    enemy and enemy.coin_value or EnemyConfig.coin_per_enemy)
   self:queue_kill_feedback(enemy)
   self:check_boss_spawn()
 
@@ -156,6 +158,15 @@ end
 
 function Game:add_coins(amount)
   self.coins = self.coins + math.max(0, math.floor(amount or 0))
+end
+
+function Game:add_coin_progress(amount)
+  self.coin_progress = self.coin_progress + math.max(0, amount or 0)
+  local earned = math.floor(self.coin_progress)
+  if earned == 0 then return 0 end
+  self.coin_progress = self.coin_progress - earned
+  self:add_coins(earned)
+  return earned
 end
 
 function Game:update_mouse_cursor()
@@ -268,6 +279,12 @@ end
 
 function Game:keypressed(key)
   if key == "escape" then love.event.quit() end
+  if key == "space" and self.state == "playing" then
+    self.arena:detonate_volley()
+  end
+  if key == "q" and self.state == "playing" then
+    self.arena:activate_shockwave()
+  end
   if key == "r" and self.state == "revive" then
     if not self:revive() then self:reset_run() end
   end

@@ -68,7 +68,7 @@ end)
 
 test("sweep catches a thin enemy across a 100ms frame", function()
   local target = enemy(100, 100)
-  local bullet = Projectile{x = 100, y = 92, r = math.pi / 2}
+  local bullet = Projectile{x = 100, y = 92, r = math.pi / 2, hit_power = 1}
   bullet:update(0.1, {target})
   assert(target.hits_remaining == 1)
   assert(not bullet.dead and bullet.momentum == 1)
@@ -89,25 +89,71 @@ test("sweep handles rotated rectangles and circles", function()
   near(Collision.sweep_circle(-10, 0, 10, 0, 2, circle), 0.25)
 end)
 
-test("missed shots die at walls and cannot hit outside enemies", function()
+test("missed shots reflect from walls and cannot hit outside enemies", function()
   local outside = enemy(500, 100)
   local bullet = Projectile{x = 470, y = 100, arena_width = gw}
   bullet:update(1, {outside})
   assert(outside.hits_remaining == 2)
-  near(bullet.x, gw - bullet.radius)
-  assert(bullet.dead)
+  assert(not bullet.dead and bullet.vx < 0)
 end)
 
-test("a new volley waits until every previous ball is gone", function()
-  local player = Player{}
-  local shots = Group()
-  local effects = Group()
-  assert(player:try_attack(100, 0, shots, effects))
-  assert(not player:try_attack(-100, 0, shots, effects))
-  shots[1].dead = true
-  shots:remove_dead()
-  assert(player:try_attack(-100, 0, shots, effects))
-  assert(#shots == 1 and shots[1].vx < 0)
+test("wall and enemy bounces charge the shockwave", function()
+  local charge = 0
+  local shot = Projectile{
+    x = aw - 3,
+    y = 100,
+    on_bounce = function() charge = charge + 1 end,
+  }
+  shot:update(0.1, {})
+  assert(charge == 1)
+
+  local target = enemy(100, 100)
+  shot = Projectile{
+    x = 90,
+    y = 100,
+    r = 0,
+    on_bounce = function() charge = charge + 1 end,
+  }
+  shot:update(0.1, {target})
+  assert(charge == 2)
+end)
+
+test("Q shockwave clears nearby normal enemies without rewards", function()
+  local game = Game()
+  game.arena.enemies:clear()
+  local nearby = game.arena:add_enemy(aw / 2 + 30, ah / 2, {
+    max_hits = 99, hits_remaining = 99,
+  })
+  local distant = game.arena:add_enemy(aw / 2 + 120, ah / 2, {
+    max_hits = 99, hits_remaining = 99,
+  })
+  local score, coins = game.score, game.coins
+  assert(not game.arena:activate_shockwave())
+  game.arena:add_shockwave_charge(Data.player.shockwave_charge_required)
+  game:keypressed("q")
+  assert(nearby.dead and not distant.dead)
+  assert(game.arena.shockwave_charge == 0)
+  assert(game.score == score and game.coins == coins)
+  assert(game.audio.events.shockwave.play_count == 1)
+  assert(getmetatable(game.arena.effects[#game.arena.effects]) ==
+    ShockwavePulse)
+end)
+
+test("magazine fires one ball per click and reloads after detonation", function()
+  local game = Game()
+  local player = game.arena.player
+  assert(player.balls_loaded == Data.player.base_ball_count)
+  assert(player:try_attack(300, player.y,
+    game.arena.projectiles, game.arena.effects))
+  assert(#game.arena.projectiles == 1 and player.balls_loaded == 1)
+  assert(player:try_attack(100, player.y,
+    game.arena.projectiles, game.arena.effects))
+  assert(#game.arena.projectiles == 2 and player.balls_loaded == 0)
+  assert(not player:try_attack(300, player.y,
+    game.arena.projectiles, game.arena.effects))
+  assert(game.arena:detonate_volley())
+  assert(#game.arena.projectiles == 0 and
+    player.balls_loaded == player.ball_count)
 end)
 
 test("game actions stay silent when audio events are unconfigured", function()
@@ -166,9 +212,8 @@ test("kills award fixed score and time raises endless difficulty", function()
   game.state = "playing"
   game.arena.spawn_timer = 100
   local valuable = {base_score = 10, kill_score = 10}
-  game:enemy_killed(valuable)
-  game:enemy_killed(valuable)
-  assert(game.score == 20)
+  for _ = 1, 4 do game:enemy_killed(valuable) end
+  assert(game.score == 40 and game.coins == 1)
   game.hud:draw(nil, nil)
   assert(stack_depth == 0)
   game:update(2)
@@ -180,21 +225,20 @@ test("kills award fixed score and time raises endless difficulty", function()
   assert(game.difficulty_level == 1)
   local coins = game.coins
   game:enemy_killed(valuable)
-  assert(game.coins > coins)
+  assert(game.coins == coins and game.coin_progress == 0.25)
   game:fail()
-  assert(game.coins > coins)
+  assert(game.coins == coins)
 end)
 
-test("active balls lock repeated volleys", function()
-  local player = Player{}
+test("each magazine shot can use a different aim direction", function()
+  local player = Player{x = 0, y = 0}
   local projectiles = Group()
   assert(not player:try_attack(0, 0, projectiles, Group()))
   assert(player:try_attack(100, 0, projectiles, Group()))
-  assert(not player:try_attack(100, 0, projectiles, Group()))
-  projectiles[1].dead = true
-  projectiles:remove_dead()
   assert(player:try_attack(-100, 0, projectiles, Group()))
-  assert(#projectiles == 1 and projectiles[1].vx < 0)
+  assert(not player:try_attack(0, 100, projectiles, Group()))
+  assert(#projectiles == Data.player.base_ball_count)
+  assert(projectiles[1].vx > 0 and projectiles[2].vx < 0)
 end)
 
 test("a volley expires and produces a visible ready signal", function()
@@ -235,19 +279,24 @@ test("screen input fires only inside the combat panel", function()
   assert(#game.arena.projectiles == 1)
 end)
 
-test("clicking during a volley converges it instead of firing again", function()
+test("left click only fires and space detonates the active volley", function()
   local game = Game()
   game.arena.projectiles:clear()
   game:mousepressed(300 * 2, 135 * 2, 1)
   assert(#game.arena.projectiles == 1)
   game:mousepressed(300 * 2, 135 * 2, 1)
+  assert(#game.arena.projectiles == Data.player.base_ball_count)
+  game:mousepressed(300 * 2, 135 * 2, 1)
+  assert(#game.arena.projectiles == Data.player.base_ball_count)
+  game:keypressed("space")
   assert(#game.arena.projectiles == 0)
+  assert(game.arena.player.balls_loaded == Data.player.base_ball_count)
   assert(game.arena.player.ready_flash_time > 0)
   assert(getmetatable(game.arena.effects[#game.arena.effects]) ==
-    ConvergenceBurst)
+    DetonationBurst)
 end)
 
-test("convergence converts accumulated momentum into area damage", function()
+test("detonation explodes at the ball position", function()
   local game = Game()
   game.arena.enemies:clear()
   game.arena.projectiles:clear()
@@ -256,13 +305,23 @@ test("convergence converts accumulated momentum into area damage", function()
   })
   assert(game.arena.player:try_attack(300, 135,
     game.arena.projectiles, game.arena.effects))
-  game.arena.projectiles[1].momentum = 10
-  local converged, momentum, radius, damage =
-    game.arena:converge_volley(target.x, target.y)
-  assert(converged and momentum == 10 and damage == 3)
-  assert(radius > Data.player.convergence_base_radius)
+  local shot = game.arena.projectiles[1]
+  shot.x, shot.y, shot.momentum = target.x, target.y, 10
+  local detonated, momentum, blasts = game.arena:detonate_volley()
+  assert(detonated and momentum == 10 and blasts[1].damage == 4)
+  assert(blasts[1].radius > Data.player.blast_base_radius)
   assert(target.dead and #game.arena.projectiles == 0)
-  assert(game.audio.events.convergence.play_count == 1)
+  assert(game.audio.events.detonation.play_count == 1)
+end)
+
+test("blast radius keeps growing beyond the combat panel", function()
+  local game = Game()
+  game.arena.projectiles:clear()
+  assert(game.arena.player:try_attack(300, 135,
+    game.arena.projectiles, game.arena.effects))
+  game.arena.projectiles[1].momentum = 10000
+  local radius = game.arena:get_blast_stats(game.arena.projectiles[1])
+  assert(radius > aw)
 end)
 
 test("hud formats elapsed survival time", function()
@@ -271,13 +330,22 @@ test("hud formats elapsed survival time", function()
   assert(game.hud:format_time() == "02:05")
   draw_text = {}
   game.hud:draw()
-  assert(table.concat(draw_text, "|"):find("02:05", 1, true))
+  local hud_text = table.concat(draw_text, "|")
+  assert(hud_text:find("02:05", 1, true))
+  assert(hud_text:find("STAR", 1, true))
+  assert(hud_text:find("SCORE", 1, true))
+  assert(hud_text:find("NOVA", 1, true))
 end)
 
 test("sidebar drawing leaves run state unchanged", function()
   local game = Game()
+  draw_text = {}
   game.sidebar:draw()
-  assert(game.coins == 8)
+  local sidebar_text = table.concat(draw_text, "|")
+  assert(sidebar_text:find("DUST", 1, true))
+  assert(sidebar_text:find("BOSS", 1, true))
+  assert(sidebar_text:find("UPGRADES", 1, true))
+  assert(game.coins == Data.rules.starting_coins)
   game.hud:draw(426, 40)
   assert(stack_depth == 0)
 end)
@@ -292,28 +360,32 @@ test("sidebar upgrades apply immediately during an endless run", function()
   local game = Game()
   game.coins = 1000
   assert(game.sidebar:buy(shop_card(game, "hit_power")))
-  assert(game.arena.player.base_projectile_hit_power == 2)
+  assert(game.arena.player.base_projectile_hit_power ==
+    Data.player.projectile_hit_power + 1)
   assert(game.sidebar:buy(shop_card(game, "ball_count")))
-  assert(game.arena.player.ball_count == 2)
-  assert(game.sidebar:buy(shop_card(game, "momentum")))
-  assert(game.arena.player.momentum_gain == 1.25)
+  assert(game.arena.player.ball_count == Data.player.base_ball_count + 1)
   assert(game.sidebar:buy(shop_card(game, "ball_speed")))
   near(game.arena.player.base_projectile_speed,
     Data.player.projectile_speed * 1.1)
-  local _, base_focus_radius = game.arena:get_convergence_stats()
-  assert(game.sidebar:buy(shop_card(game, "focus")))
-  local _, upgraded_focus_radius = game.arena:get_convergence_stats()
-  assert(upgraded_focus_radius == base_focus_radius + 4)
-  assert(game.arena.player.base_projectile_hit_power == 2)
+  local shot = Projectile{}
+  local base_radius, base_damage = game.arena:get_blast_stats(shot)
+  assert(game.sidebar:buy(shop_card(game, "blast_radius")))
+  assert(game.sidebar:buy(shop_card(game, "blast_damage")))
+  local upgraded_radius, upgraded_damage = game.arena:get_blast_stats(shot)
+  assert(upgraded_radius == base_radius + 4)
+  assert(upgraded_damage == base_damage + 1)
+  assert(game.arena.player.base_projectile_hit_power ==
+    Data.player.projectile_hit_power + 1)
 end)
 
 test("sidebar rejects unaffordable and capped upgrades", function()
   local game = Game()
-  local momentum = shop_card(game, "momentum")
-  assert(not game.sidebar:buy(momentum))
-  game.upgrades.momentum = momentum.max
+  local blast = shop_card(game, "blast_damage")
+  game.coins = 0
+  assert(not game.sidebar:buy(blast))
+  game.upgrades.blast_damage = blast.max
   local coins = game.coins
-  assert(not game.sidebar:buy(momentum) and game.coins == coins)
+  assert(not game.sidebar:buy(blast) and game.coins == coins)
 end)
 
 test("all scene states draw through the extracted views", function()
@@ -328,12 +400,13 @@ test("all scene states draw through the extracted views", function()
   game:update(Data.rules.death_transition_duration)
   draw_text = {}
   game:draw_scene()
-  assert(table.concat(draw_text, "|"):find("YOU DIED...", 1, true))
+  assert(table.concat(draw_text, "|"):find("STAR COLLAPSED", 1, true))
 end)
 
 test("paid revive preserves the run and spends increasing coins", function()
   local game = Game()
   local old_arena = game.arena
+  game.coins = Data.rules.revive_base_cost
   game.elapsed_time = 95
   game.difficulty_level = 3
   game.score = 40
@@ -422,7 +495,7 @@ test("enemy traits modify newly spawned enemies", function()
   game.enemy_traits = {haste = 1, armor = 1, fission = 1}
   game.arena = Arena(game)
   local target = game.arena:add_enemy(100, 100)
-  assert(target.max_hits == 2 and target.hits_remaining == 2)
+  assert(target.max_hits == 4 and target.hits_remaining == 4)
   near(target.v, EnemyConfig.move_speed * 1.1)
   assert(target.contact_damage == 8)
   assert(target.base_score == 7 and target.fission)
@@ -430,29 +503,29 @@ test("enemy traits modify newly spawned enemies", function()
   game.enemy_traits.armor = 10
   local capped = game.arena:add_enemy(120, 100)
   near(capped.v, EnemyConfig.move_speed * 1.3)
-  assert(capped.max_hits == 4)
+  assert(capped.max_hits == 6)
 end)
 
 test("enemy growth follows elapsed-time difficulty", function()
   local game = Game()
   local base = game.arena:add_enemy(80, 100)
-  assert(base.max_hits == 1 and base.hits_remaining == 1)
+  assert(base.max_hits == 3 and base.hits_remaining == 3)
   near(base.v, EnemyConfig.move_speed)
   assert(base.contact_damage == 8)
 
   game.difficulty_level = 1
   game.elapsed_time = 30
   local difficulty_one = game.arena:add_enemy(100, 100)
-  assert(difficulty_one.max_hits == 3 and
-    difficulty_one.hits_remaining == 3)
+  assert(difficulty_one.max_hits == 6 and
+    difficulty_one.hits_remaining == 6)
   near(difficulty_one.v, EnemyConfig.move_speed * 1.04)
   assert(difficulty_one.contact_damage == 9)
 
   game.difficulty_level = 2
   game.elapsed_time = 60
   local difficulty_two = game.arena:add_enemy(120, 100)
-  assert(difficulty_two.max_hits == 4 and
-    difficulty_two.hits_remaining == 4)
+  assert(difficulty_two.max_hits == 7 and
+    difficulty_two.hits_remaining == 7)
   near(difficulty_two.v, EnemyConfig.move_speed * 1.08)
   assert(difficulty_two.contact_damage == 10)
 
@@ -460,7 +533,7 @@ test("enemy growth follows elapsed-time difficulty", function()
   game.elapsed_time = 600
   game.enemy_traits.armor = 10
   local late = game.arena:add_enemy(140, 100)
-  assert(late.max_hits == 26 and late.hits_remaining == 26)
+  assert(late.max_hits == 40 and late.hits_remaining == 40)
   near(late.v, EnemyConfig.move_speed * 1.4)
   assert(late.contact_damage == 24)
 end)
@@ -471,7 +544,18 @@ test("late enemies scale against purchased hit power", function()
   game.elapsed_time = 600
   game.arena.player.base_projectile_hit_power = 11
   local target = game.arena:add_enemy(100, 100)
-  assert(target.max_hits == 30)
+  assert(target.max_hits == 42)
+end)
+
+test("enemy growth responds to blast power and magazine size", function()
+  local game = Game()
+  game.difficulty_level = 2
+  game.elapsed_time = 60
+  game.upgrades.ball_count = 4
+  game.upgrades.blast_damage = 4
+  game.arena.player:apply_upgrades(game.upgrades)
+  local target = game.arena:add_enemy(100, 100)
+  assert(target.max_hits == 10 and target.hits_remaining == 10)
 end)
 
 test("late enemies accelerate only after entering the pressure radius", function()
@@ -527,11 +611,12 @@ test("fission creates two half-hit children without recursive splitting", functi
   target:hit(target.hits_remaining, Projectile{score_bonus = 1})
   game.arena.enemies:remove_dead()
   game.arena:spawn_pending_fissions()
-  assert(#game.arena.enemies == 2 and game.coins == 12 and game.score == 5)
+  assert(#game.arena.enemies == 2 and game.coins == 0 and
+    game.coin_progress == EnemyConfig.coin_per_enemy and game.score == 5)
   for _, child in ipairs(game.arena.enemies) do
     assert(child.max_hits == 2 and child.hits_remaining == 2)
-    assert(not child.fission and
-      child.base_score == 1)
+    assert(not child.fission and child.base_score == 1 and
+      child.coin_value == EnemyConfig.fission_child_coin)
   end
   local dx = game.arena.enemies[2].x - game.arena.enemies[1].x
   local dy = game.arena.enemies[2].y - game.arena.enemies[1].y
@@ -580,7 +665,7 @@ test("death transition animates enemies without changing gameplay positions", fu
   assert(target.death_offset_x ~= 0 or target.death_offset_y ~= 0)
   draw_text = {}
   game:draw_scene()
-  assert(table.concat(draw_text, "|"):find("YOU DIED...", 1, true))
+  assert(table.concat(draw_text, "|"):find("STAR COLLAPSED", 1, true))
 end)
 
 test("death wave pulls far enemies while bursting through near enemies", function()
@@ -597,6 +682,7 @@ end)
 
 test("revive clears nearby enemies without awarding score", function()
   local game = Game()
+  game.coins = Data.rules.revive_base_cost
   local player = game.arena.player
   game.arena.enemies:clear()
   local close_enemy = game.arena:add_enemy(player.x + 20, player.y)
@@ -612,7 +698,7 @@ end)
 
 test("the ball reflects from the nearest enemy", function()
   local first, second = enemy(80, 100), enemy(100, 100)
-  local shot = Projectile{x = 50, y = 100}
+  local shot = Projectile{x = 50, y = 100, hit_power = 1}
   shot:update(0.5, {second, first})
   assert(first.hits_remaining == 1)
   assert(second.hits_remaining == second.max_hits)
@@ -628,9 +714,11 @@ test("ordinary kill scoring and coins settle once", function()
   game.arena.enemies:add(target)
   game.arena.projectiles:add(Projectile{x = 100, y = 100})
   game:update(0.01)
-  assert(game.score == 106 and game.coins == 13)
+  assert(game.score == 106 and game.coins == 0 and
+    game.coin_progress == EnemyConfig.coin_per_enemy)
   game:update(0.01)
-  assert(game.score == 106 and game.coins == 13)
+  assert(game.score == 106 and game.coins == 0 and
+    game.coin_progress == EnemyConfig.coin_per_enemy)
 end)
 
 test("same-frame kills merge into one directional camera impulse", function()
@@ -649,7 +737,7 @@ test("same-frame kills merge into one directional camera impulse", function()
   assert(calls == 1)
 end)
 
-test("enemy hits reflect the ball and build momentum", function()
+test("enemy hits keep reflecting without a bounce limit", function()
   local shot = Projectile{x = 100, y = 100, r = 0}
   local first = enemy(120, 100)
   local second = enemy(80, 100)
@@ -662,32 +750,48 @@ test("enemy hits reflect the ball and build momentum", function()
   assert(second.dead and not shot.dead and shot.momentum == 2)
 end)
 
-test("buying ball count expands the next center volley", function()
+test("overlapping blasts damage each enemy only once", function()
+  local game = Game()
+  game.arena.enemies:clear()
+  game.arena.projectiles:clear()
+  local target = game.arena:add_enemy(200, 135, {
+    max_hits = 10, hits_remaining = 10,
+  })
+  game.arena.projectiles:add(Projectile{x = 200, y = 135})
+  game.arena.projectiles:add(Projectile{x = 202, y = 135})
+  assert(game.arena:detonate_volley())
+  assert(target.hits_remaining == 10 - Data.player.blast_base_damage)
+end)
+
+test("buying balls expands the manually fired magazine", function()
   local game = Game()
   game.coins = 100
   local player = game.arena.player
-  assert(player:try_attack(300, player.y,
-    game.arena.projectiles, game.arena.effects))
-  assert(#game.arena.projectiles == 1)
   assert(game.sidebar:buy(shop_card(game, "ball_count")))
-  assert(#game.arena.projectiles == 1)
-  assert(player.ball_count == 2)
-  assert(game.arena:end_volley())
-  assert(#game.arena.projectiles == 0 and player.ready_flash_time > 0)
+  assert(player.ball_count == Data.player.base_ball_count + 1)
+  assert(player.balls_loaded == player.ball_count)
   assert(player:try_attack(300, player.y,
     game.arena.projectiles, game.arena.effects))
-  assert(#game.arena.projectiles == 2)
+  assert(player:try_attack(player.x, player.y + 100,
+    game.arena.projectiles, game.arena.effects))
+  assert(player:try_attack(100, player.y,
+    game.arena.projectiles, game.arena.effects))
+  assert(not player:try_attack(player.x, player.y - 100,
+    game.arena.projectiles, game.arena.effects))
+  assert(#game.arena.projectiles == player.ball_count and
+    player.balls_loaded == 0)
+  assert(game.arena.projectiles[1].vx > 0)
+  assert(game.arena.projectiles[2].vy > 0)
+  assert(game.arena.projectiles[3].vx < 0)
 end)
 
-test("convergence circle starts expanding immediately", function()
-  local burst = ConvergenceBurst{x = 100, y = 100, radius = 60}
-  burst.time = burst.duration *
-    (Data.player.convergence_expansion_start + 0.01)
+test("detonation circle starts expanding immediately", function()
+  local burst = DetonationBurst{x = 100, y = 100, radius = 60}
+  burst.time = burst.duration * 0.01
   local start_radius, start_trail = burst:get_expansion_state()
-  assert(start_radius and start_radius < 1)
+  assert(start_radius < 1)
   assert(start_trail <= start_radius)
-  burst.time = burst.duration *
-    (Data.player.convergence_expansion_start + 1) / 2
+  burst.time = burst.duration / 2
   local middle_radius, middle_trail = burst:get_expansion_state()
   assert(middle_radius > start_radius)
   assert(middle_trail < middle_radius)
@@ -704,13 +808,16 @@ test("score milestones queue one scaled boss", function()
   assert(#game.arena.enemies == 1)
   local boss = game.arena.enemies[1]
   assert(boss.is_boss and boss.max_hits == EnemyConfig.boss_hits)
+  assert(boss.coin_value == EnemyConfig.boss_coin)
   assert(boss.width == EnemyConfig.boss_size and
     boss.height == EnemyConfig.boss_size)
 end)
 
 test("the shop only contains upgrades for the core volley loop", function()
   local game = Game()
-  local expected = {"ball_count", "ball_speed", "hit_power", "momentum", "focus"}
+  local expected = {
+    "ball_count", "ball_speed", "hit_power", "blast_radius", "blast_damage",
+  }
   assert(#game.sidebar.cards == #expected)
   for index, key in ipairs(expected) do
     assert(game.sidebar.cards[index].key == key)

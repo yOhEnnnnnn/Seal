@@ -19,10 +19,10 @@ function Projectile:init(args)
   self.width = self.radius * 2
   self.height = self.radius * 2
   self.effects = self.effects or Group()
+  self.on_bounce = args.on_bounce
   self.color = self.color or Data.bullets.color
   self.score_bonus = self.score_bonus or Data.bullets.score_bonus
   self.momentum = 0
-  self.momentum_gain = 1
   self.momentum_decay_time = 0
   self.ignored_enemy = nil
   self.ignore_time = 0
@@ -48,9 +48,13 @@ function Projectile:update_momentum_stats()
 end
 
 function Projectile:add_momentum()
-  self.momentum = self.momentum + self.momentum_gain
+  self.momentum = self.momentum + 1
   self.momentum_decay_time = Data.upgrades.momentum_decay_delay
   self:update_momentum_stats()
+end
+
+function Projectile:notify_bounce()
+  if self.on_bounce then self.on_bounce() end
 end
 
 function Projectile:update(dt, enemies)
@@ -117,7 +121,14 @@ end
 function Projectile:hit_wall(hit_x, hit_y)
   if self.audio then self.audio:play("wall_hit") end
   self:spawn_wall_impact_particles(hit_x, hit_y)
-  self.dead = true
+  if hit_x then self.vx = -self.vx end
+  if hit_y then self.vy = -self.vy end
+  self.r = math.atan2(self.vy, self.vx)
+  self.x = math.max(self.radius + 0.01,
+    math.min(self.x, self.arena_width - self.radius - 0.01))
+  self.y = math.max(self.radius + 0.01,
+    math.min(self.y, self.arena_height - self.radius - 0.01))
+  self:notify_bounce()
 end
 
 function Projectile:spawn_wall_impact_particles(hit_x, hit_y)
@@ -178,6 +189,7 @@ function Projectile:check_hits(enemies, end_x, end_y)
   self.ignore_time = 0.06
   nearest:spawn_hit_particles(self.r + math.pi, self.color)
   self:add_momentum()
+  self:notify_bounce()
   local normal_x, normal_y = self.x - nearest.x, self.y - nearest.y
   local normal_length = math.sqrt(normal_x * normal_x + normal_y * normal_y)
   if normal_length == 0 then
@@ -199,7 +211,7 @@ function Projectile:draw()
   love.graphics.translate(self.x + offset, self.y + offset)
   love.graphics.rotate(self.r)
   graphics.rectangle(0, 0, self.visual_width, self.visual_height,
-    1, 1, {0.32, 0.33, 0.32, 0.72})
+    1, 1, {12 / 255, 20 / 255, 34 / 255, 0.86})
   love.graphics.pop()
 
   love.graphics.push("all")

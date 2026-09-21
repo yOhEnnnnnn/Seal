@@ -16,7 +16,7 @@ function Player:init(args)
   self.base_projectile_hit_power = self.base_projectile_hit_power or
     Data.player.projectile_hit_power
   self:apply_upgrades(args.upgrades or {})
-  self.hit_color = self.hit_color or {1, 1, 1, 1}
+  self.hit_color = self.hit_color or Data.theme.colors.foreground
   self.hit_duration = Data.player.hit_duration
   self.hit_time = 0
   self.invincibility_time = 0
@@ -25,14 +25,19 @@ function Player:init(args)
 end
 
 function Player:apply_upgrades(upgrades)
+  local previous_ball_count = self.ball_count or Data.player.base_ball_count
   self.base_projectile_hit_power = Data.player.projectile_hit_power +
     (upgrades.hit_power or 0) * Data.upgrades.hit_power_per_level
   self.base_projectile_speed = Data.player.projectile_speed *
     (1 + (upgrades.ball_speed or 0) *
       Data.upgrades.ball_speed_bonus_per_level)
-  self.momentum_gain = 1 + (upgrades.momentum or 0) *
-    Data.upgrades.momentum_gain_per_level
-  self.ball_count = 1 + (upgrades.ball_count or 0)
+  self.ball_count = Data.player.base_ball_count + (upgrades.ball_count or 0)
+  if self.balls_loaded == nil then
+    self.balls_loaded = self.ball_count
+  elseif self.ball_count > previous_ball_count then
+    self.balls_loaded = self.balls_loaded +
+      self.ball_count - previous_ball_count
+  end
 end
 
 function Player:spawn_ball(r, projectiles, effects)
@@ -45,7 +50,7 @@ function Player:spawn_ball(r, projectiles, effects)
     audio = self.audio,
     arena_width = aw,
     arena_height = ah,
-    lifetime = Data.player.projectile_lifetime,
+    on_bounce = self.on_projectile_bounce,
   })
   self:apply_projectile_upgrades(projectile)
   return projectile
@@ -54,7 +59,6 @@ end
 function Player:apply_projectile_upgrades(projectile)
   projectile.base_speed = self.base_projectile_speed
   projectile.base_hit_power = self.base_projectile_hit_power
-  projectile.momentum_gain = self.momentum_gain
   projectile:update_momentum_stats()
 end
 
@@ -67,6 +71,7 @@ function Player:update(dt)
 end
 
 function Player:on_volley_ready()
+  self.balls_loaded = self.ball_count
   self.ready_flash_time = Data.player.ready_flash_duration
   if self.audio then self.audio:play("volley_ready") end
 end
@@ -81,16 +86,12 @@ function Player:hit(damage)
 end
 
 function Player:fire_bullet(aim_x, aim_y, projectiles, effects)
-  if #projectiles > 0 then return end
+  if self.balls_loaded <= 0 then return end
   if (aim_x - self.x) ^ 2 + (aim_y - self.y) ^ 2 <= 1 then return end
 
   local r = math.atan2(aim_y - self.y, aim_x - self.x)
-  local shot_count = self.ball_count
-  for index = 1, shot_count do
-    local angle = r + (index - (shot_count + 1) / 2) *
-      Data.player.volley_angle
-    self:spawn_ball(angle, projectiles, effects)
-  end
+  self:spawn_ball(r, projectiles, effects)
+  self.balls_loaded = self.balls_loaded - 1
 
   if self.audio then self.audio:play("attack") end
   return true, r
@@ -131,7 +132,8 @@ function Player:draw()
     local progress = 1 - self.ready_flash_time /
       Data.player.ready_flash_duration
     graphics.circle(0, 0, self.size + progress * 10,
-      {1, 1, 1, 1 - progress}, 1.5)
+      graphics.color_with_alpha(
+        Data.theme.colors.foreground, 1 - progress), 1.5)
   end
   love.graphics.pop()
 end

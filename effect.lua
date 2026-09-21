@@ -82,67 +82,75 @@ function RevivePulse:draw()
   graphics.circle(self.x, self.y, radius,
     {1, 1, 1, (1 - progress) * 0.16})
   graphics.circle(self.x, self.y, radius,
-    {0, 240 / 255, 1, 1 - progress}, 2)
+    graphics.color_with_alpha(Data.theme.colors.accent, 1 - progress), 2)
 end
 
-ConvergenceBurst = Object:extend()
-ConvergenceBurst:implement(GameObject)
+ShockwavePulse = Object:extend()
+ShockwavePulse:implement(GameObject)
 
-function ConvergenceBurst:init(args)
+function ShockwavePulse:init(args)
   self:init_game_object(args)
-  self.origins = self.origins or {}
-  self.radius = self.radius or Data.player.convergence_base_radius
-  self.duration = Data.player.convergence_duration
+  self.radius = self.radius or Data.player.shockwave_radius
+  self.duration = Data.player.shockwave_duration
   self.time = 0
 end
 
-function ConvergenceBurst:update(dt)
+function ShockwavePulse:update(dt)
   self.time = math.min(self.time + dt, self.duration)
   if self.time == self.duration then self.dead = true end
 end
 
-function ConvergenceBurst:get_expansion_state()
+function ShockwavePulse:draw()
   local progress = self.time / self.duration
-  local expansion = math.max(0, math.min(
-    (progress - Data.player.convergence_expansion_start) /
-      (1 - Data.player.convergence_expansion_start), 1))
-  if expansion == 0 then return end
+  local expansion = 1 - (1 - progress) ^ 3
+  graphics.circle(self.x, self.y, self.radius * expansion,
+    graphics.color_with_alpha(
+      Data.theme.colors.accent, (1 - progress) * 0.9), 2)
+end
+
+DetonationBurst = Object:extend()
+DetonationBurst:implement(GameObject)
+
+function DetonationBurst:init(args)
+  self:init_game_object(args)
+  self.radius = self.radius or Data.player.blast_base_radius
+  self.duration = Data.player.blast_duration
+  self.time = 0
+end
+
+function DetonationBurst:update(dt)
+  self.time = math.min(self.time + dt, self.duration)
+  if self.time == self.duration then self.dead = true end
+end
+
+function DetonationBurst:get_expansion_state()
+  local progress = self.time / self.duration
+  local expansion = math.max(0, math.min(progress, 1))
   local main_radius = self.radius * cubic_in_out(expansion)
   local trail_progress = math.max(0, math.min(
-    (expansion - Data.player.convergence_trail_delay) /
-      (1 - Data.player.convergence_trail_delay), 1))
+    (expansion - Data.player.blast_trail_delay) /
+      (1 - Data.player.blast_trail_delay), 1))
   local trail_radius = self.radius * cubic_in_out(trail_progress)
   return main_radius, trail_radius, expansion
 end
 
-function ConvergenceBurst:draw_center_flash(expansion)
+function DetonationBurst:draw_center_flash(expansion)
   local progress = math.min(
-    expansion / Data.player.convergence_flash_duration, 1)
+    expansion / Data.player.blast_flash_duration, 1)
   if progress == 1 then return end
   graphics.circle(self.x, self.y, 2 + 3 * progress,
     {1, 1, 1, 1 - progress})
 end
 
-function ConvergenceBurst:draw()
-  local progress = self.time / self.duration
-  local gather = math.min(progress * 2.4, 1)
-  local eased = cubic_in_out(gather)
-  local color = {0, 240 / 255, 1, 1 - gather * 0.65}
-  for _, origin in ipairs(self.origins) do
-    local start_x = origin.x + (self.x - origin.x) * eased
-    local start_y = origin.y + (self.y - origin.y) * eased
-    graphics.line(start_x, start_y, self.x, self.y, color, 1.5)
-    graphics.rectangle(start_x, start_y, 3, 3, nil, nil, color)
-  end
-
+function DetonationBurst:draw()
   local main_radius, trail_radius, expansion = self:get_expansion_state()
-  if main_radius then
-    local appear = math.min(expansion / 0.08, 1)
-    local fade = 1 - math.max(0, (expansion - 0.72) / 0.28)
-    graphics.circle(self.x, self.y, trail_radius,
-      {0, 240 / 255, 1, appear * fade * 0.5}, 2)
-    graphics.circle(self.x, self.y, main_radius,
-      {1, 1, 1, appear * fade}, 2.5)
-    self:draw_center_flash(expansion)
-  end
+  local appear = math.min(expansion / 0.08, 1)
+  local fade = 1 - math.max(0, (expansion - 0.72) / 0.28)
+  graphics.circle(self.x, self.y, trail_radius,
+    graphics.color_with_alpha(
+      Data.theme.colors.accent, appear * fade * 0.5), 2)
+  graphics.circle(self.x, self.y, main_radius,
+    graphics.color_with_alpha(
+      Data.theme.colors.foreground, appear * fade), 2.5)
+  self:draw_center_flash(expansion)
 end

@@ -19,11 +19,17 @@ return {
       volume = 0.55,
       pitch_variation = 0.04,
     },
-    convergence = {
+    detonation = {
       tone = {frequency = 150, duration = 0.16, gain = 0.2},
       voices = 3,
       volume = 0.75,
       pitch_variation = 0.08,
+    },
+    shockwave = {
+      tone = {frequency = 105, duration = 0.2, gain = 0.24},
+      voices = 1,
+      volume = 0.8,
+      pitch_variation = 0,
     },
     death_snap = {
       tone = {frequency = 420, duration = 0.07, gain = 0.24},

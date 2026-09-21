@@ -1,6 +1,6 @@
 -- 每局初始资源。
 return {
-  starting_coins = 8,
+  starting_coins = 0,
   death_transition_duration = 1.05,
   death_hit_stop = 0.08,
   death_pull_end = 0.24,
