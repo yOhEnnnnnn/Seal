@@ -504,10 +504,9 @@ function Arena:draw_crosshair(mouse_x, mouse_y)
   love.graphics.line(mouse_x + half, mouse_y + half,
     mouse_x + half, mouse_y + half - corner)
   if #self.projectiles > 0 then
-    local momentum, radius = self:get_convergence_stats()
-    love.graphics.setColor(0, 240 / 255, 1,
-      0.18 + math.min(momentum / 30, 0.28))
-    love.graphics.circle("line", mouse_x, mouse_y, radius)
+    local _, radius = self:get_convergence_stats()
+    graphics.circle(mouse_x, mouse_y, radius,
+      {0, 240 / 255, 1, Data.player.convergence_preview_alpha})
   end
   love.graphics.pop()
 end

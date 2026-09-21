@@ -101,6 +101,28 @@ function ConvergenceBurst:update(dt)
   if self.time == self.duration then self.dead = true end
 end
 
+function ConvergenceBurst:get_expansion_state()
+  local progress = self.time / self.duration
+  local expansion = math.max(0, math.min(
+    (progress - Data.player.convergence_expansion_start) /
+      (1 - Data.player.convergence_expansion_start), 1))
+  if expansion == 0 then return end
+  local main_radius = self.radius * cubic_in_out(expansion)
+  local trail_progress = math.max(0, math.min(
+    (expansion - Data.player.convergence_trail_delay) /
+      (1 - Data.player.convergence_trail_delay), 1))
+  local trail_radius = self.radius * cubic_in_out(trail_progress)
+  return main_radius, trail_radius, expansion
+end
+
+function ConvergenceBurst:draw_center_flash(expansion)
+  local progress = math.min(
+    expansion / Data.player.convergence_flash_duration, 1)
+  if progress == 1 then return end
+  graphics.circle(self.x, self.y, 2 + 3 * progress,
+    {1, 1, 1, 1 - progress})
+end
+
 function ConvergenceBurst:draw()
   local progress = self.time / self.duration
   local gather = math.min(progress * 2.4, 1)
@@ -113,12 +135,14 @@ function ConvergenceBurst:draw()
     graphics.rectangle(start_x, start_y, 3, 3, nil, nil, color)
   end
 
-  local blast = math.max(0, (progress - 0.32) / 0.68)
-  if blast > 0 then
-    local blast_radius = self.radius * cubic_in_out(blast)
-    graphics.circle(self.x, self.y, blast_radius,
-      {0, 240 / 255, 1, (1 - blast) * 0.14})
-    graphics.circle(self.x, self.y, blast_radius,
-      {1, 1, 1, 1 - blast}, 2)
+  local main_radius, trail_radius, expansion = self:get_expansion_state()
+  if main_radius then
+    local appear = math.min(expansion / 0.08, 1)
+    local fade = 1 - math.max(0, (expansion - 0.72) / 0.28)
+    graphics.circle(self.x, self.y, trail_radius,
+      {0, 240 / 255, 1, appear * fade * 0.5}, 2)
+    graphics.circle(self.x, self.y, main_radius,
+      {1, 1, 1, appear * fade}, 2.5)
+    self:draw_center_flash(expansion)
   end
 end

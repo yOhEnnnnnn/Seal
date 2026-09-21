@@ -17,7 +17,11 @@ return {
   convergence_max_radius = 72,
   convergence_base_damage = 1,
   convergence_momentum_per_damage = 5,
-  convergence_duration = 0.32,
+  convergence_duration = 0.48,
+  convergence_expansion_start = 0,
+  convergence_trail_delay = 0.1,
+  convergence_flash_duration = 0.2,
+  convergence_preview_alpha = 0.08,
   attack_shake = 0.3,
   hit_shake = 4,
 }

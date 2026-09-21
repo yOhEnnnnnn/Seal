@@ -679,6 +679,20 @@ test("buying ball count expands the next center volley", function()
   assert(#game.arena.projectiles == 2)
 end)
 
+test("convergence circle starts expanding immediately", function()
+  local burst = ConvergenceBurst{x = 100, y = 100, radius = 60}
+  burst.time = burst.duration *
+    (Data.player.convergence_expansion_start + 0.01)
+  local start_radius, start_trail = burst:get_expansion_state()
+  assert(start_radius and start_radius < 1)
+  assert(start_trail <= start_radius)
+  burst.time = burst.duration *
+    (Data.player.convergence_expansion_start + 1) / 2
+  local middle_radius, middle_trail = burst:get_expansion_state()
+  assert(middle_radius > start_radius)
+  assert(middle_trail < middle_radius)
+end)
+
 test("score milestones queue one scaled boss", function()
   local game = Game()
   game.arena.enemies:clear()
