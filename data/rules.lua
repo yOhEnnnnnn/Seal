@@ -1,6 +1,9 @@
--- 每局初始资源。
+-- Demo 局外成长与状态流程。
 return {
-  starting_coins = 0,
+  starting_star_points = 3,
+  star_point_score_step = 100,
+  star_point_boss_bonus = 1,
+  max_playing_dt = 0.1,
   death_transition_duration = 1.05,
   death_hit_stop = 0.08,
   death_pull_end = 0.24,
@@ -9,13 +12,4 @@ return {
   death_wave_scale = 2.25,
   death_wave_sway = 14,
   death_result_start = 0.8,
-  revive_base_cost = 8,
-  revive_cost_growth = 1.75,
-  revive_clear_radius = 120,
-  revive_invincibility = 1.2,
-  revive_transition_duration = 0.62,
-  revive_reform_duration = 0.2,
-  revive_button_width = 150,
-  revive_button_height = 28,
-  revive_button_y = 157,
 }

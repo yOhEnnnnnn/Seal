@@ -62,29 +62,6 @@ function HitCircle:draw()
   graphics.circle(self.x, self.y, self.radius, self.color)
 end
 
-RevivePulse = Object:extend()
-RevivePulse:implement(GameObject)
-
-function RevivePulse:init(args)
-  self:init_game_object(args)
-  self.time = 0
-  self.duration = 0.45
-end
-
-function RevivePulse:update(dt)
-  self.time = math.min(self.time + dt, self.duration)
-  if self.time == self.duration then self.dead = true end
-end
-
-function RevivePulse:draw()
-  local progress = self.time / self.duration
-  local radius = Data.rules.revive_clear_radius * progress
-  graphics.circle(self.x, self.y, radius,
-    {1, 1, 1, (1 - progress) * 0.16})
-  graphics.circle(self.x, self.y, radius,
-    graphics.color_with_alpha(Data.theme.colors.accent, 1 - progress), 2)
-end
-
 ShockwavePulse = Object:extend()
 ShockwavePulse:implement(GameObject)
 

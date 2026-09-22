@@ -19,7 +19,6 @@ function Player:init(args)
   self.hit_color = self.hit_color or Data.theme.colors.foreground
   self.hit_duration = Data.player.hit_duration
   self.hit_time = 0
-  self.invincibility_time = 0
   self.ready_flash_time = 0
   self:set_as_rectangle(self.size, self.size, "dynamic", "player")
 end
@@ -66,7 +65,6 @@ function Player:update(dt)
   self.x, self.y = aw / 2, ah / 2
   self:stop()
   self.hit_time = math.max(self.hit_time - dt, 0)
-  self.invincibility_time = math.max(self.invincibility_time - dt, 0)
   self.ready_flash_time = math.max(self.ready_flash_time - dt, 0)
 end
 
@@ -77,7 +75,7 @@ function Player:on_volley_ready()
 end
 
 function Player:hit(damage)
-  if self.dead or self.invincibility_time > 0 then return end
+  if self.dead then return end
   self.hit_time = self.hit_duration
   self.hp = 0
   self:die()
@@ -114,18 +112,6 @@ end
 function Player:draw()
   love.graphics.push("all")
   love.graphics.translate(self.x, self.y)
-  if self.revive_progress then
-    local reform = math.min(self.revive_progress *
-      Data.rules.revive_transition_duration /
-      Data.rules.revive_reform_duration, 1)
-    local eased = 1 - (1 - reform) ^ 3
-    love.graphics.rotate((1 - eased) * -0.8)
-    love.graphics.scale(eased, eased)
-  end
-  if self.invincibility_time > 0 then
-    love.graphics.setColor(1, 1, 1,
-      0.45 + 0.35 * math.abs(math.sin(self.invincibility_time * 14)))
-  end
   self:draw_rounded_square(0, 0, self.size,
     self.hit_time > 0 and self.hit_color or self.color)
   if self.ready_flash_time > 0 then

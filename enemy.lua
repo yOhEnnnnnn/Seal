@@ -6,7 +6,6 @@ function Enemy:init(args)
   self:init_game_object(args)
   self:init_physics(args)
   self.base_score = self.base_score or EnemyConfig.base_score
-  self.coin_value = self.coin_value or EnemyConfig.coin_per_enemy
   self.max_hits = self.max_hits or EnemyConfig.max_hits
   self.hits_remaining = self.hits_remaining or self.max_hits
   self.v = self.v or self.speed or EnemyConfig.move_speed

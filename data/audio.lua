@@ -43,11 +43,5 @@ return {
       volume = 0.9,
       pitch_variation = 0,
     },
-    revive = {
-      tone = {frequency = 260, duration = 0.24, gain = 0.22},
-      voices = 2,
-      volume = 0.75,
-      pitch_variation = 0.18,
-    },
   },
 }

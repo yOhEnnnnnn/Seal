@@ -2,6 +2,8 @@ Projectile = Object:extend()
 Projectile:implement(GameObject)
 Projectile:implement(Physics)
 
+local MAX_COLLISIONS_PER_UPDATE = 64
+
 function Projectile:init(args)
   self:init_game_object(args)
   self:init_physics(args)
@@ -70,7 +72,9 @@ function Projectile:update(dt, enemies)
   end
   if self.lifetime then dt = math.min(dt, self.lifetime) end
   local remaining = dt
-  while remaining > 0 and not self.dead do
+  local collision_count = 0
+  while remaining > 0 and not self.dead and
+      collision_count < MAX_COLLISIONS_PER_UPDATE do
     local dx, dy = self.vx * remaining, self.vy * remaining
     local tx = dx > 0 and (self.arena_width - self.radius - self.x) / dx or
       (dx < 0 and (self.radius - self.x) / dx or math.huge)
@@ -78,13 +82,20 @@ function Projectile:update(dt, enemies)
       (dy < 0 and (self.radius - self.y) / dy or math.huge)
     local wall_t = math.min(tx, ty)
     local travel = math.max(0, math.min(1, wall_t))
-    local hit_enemy = self:check_hits(
+    local enemy_t = self:check_hits(
       enemies, self.x + dx * travel, self.y + dy * travel)
-    if hit_enemy or self.dead or wall_t > 1 then break end
-
-    local hit_x, hit_y = tx <= ty, ty <= tx
-    self:hit_wall(hit_x, hit_y)
-    remaining = remaining * (1 - travel)
+    if self.dead then break end
+    if enemy_t then
+      collision_count = collision_count + 1
+      remaining = remaining * (1 - travel * enemy_t)
+    elseif wall_t <= 1 then
+      local hit_x, hit_y = tx <= ty, ty <= tx
+      self:hit_wall(hit_x, hit_y)
+      collision_count = collision_count + 1
+      remaining = remaining * (1 - travel)
+    else
+      break
+    end
   end
   if self.lifetime then
     self.lifetime = self.lifetime - dt
@@ -202,7 +213,7 @@ function Projectile:check_hits(enemies, end_x, end_y)
   self.r = math.atan2(self.vy, self.vx)
   self.x = self.x + normal_x * 0.01
   self.y = self.y + normal_y * 0.01
-  return true
+  return hit_t
 end
 
 function Projectile:draw()

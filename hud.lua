@@ -24,6 +24,8 @@ function HUD:draw_header()
   love.graphics.print("STAR", 9, 6)
 
   love.graphics.setFont(self.game.small_font)
+  graphics.set_color(self.colors.gold)
+  love.graphics.print("STARS " .. self.game.star_points, 76, 8)
   graphics.set_color(self.colors.muted)
   love.graphics.printf("SCORE " .. string.format("%06d", self.game.score),
     aw - 118, 8, 108, "right")
@@ -63,7 +65,8 @@ function HUD:draw_shockwave_charge()
   local charging = self.game.arena.shockwave_charging
   local power = self.game.arena:get_shockwave_power()
   local x, width = 128, 58
-  graphics.set_color(charging or ready and self.colors.gold or self.colors.muted)
+  graphics.set_color(
+    (charging or ready) and self.colors.gold or self.colors.muted)
   love.graphics.printf(charging and
     "POWER " .. math.floor(power * 100 + 0.5) .. "%" or
     (ready and "Q READY" or "Q " .. math.floor(charge + 0.5) .. "%"),
@@ -158,7 +161,7 @@ function HUD:draw_death_transition(progress)
   end
 end
 
-function HUD:draw_revive(cost)
+function HUD:draw_death_summary()
   love.graphics.push("all")
   graphics.rectangle(aw / 2, ah / 2, aw, ah, nil, nil,
     {0, 0, 0, 0.62})
@@ -169,30 +172,10 @@ function HUD:draw_revive(cost)
   graphics.set_color(self.colors.muted)
   love.graphics.printf("SCORE " .. string.format("%06d", self.game.score) ..
     "   TIME " .. self:format_time(), 0, ah / 2 - 16, aw, "center")
-  local affordable = self.game.coins >= cost
-  graphics.rectangle(aw / 2, Data.rules.revive_button_y,
-    Data.rules.revive_button_width, Data.rules.revive_button_height, 2, 2,
-    affordable and self.colors.background_light or self.colors.background)
-  graphics.rectangle(aw / 2, Data.rules.revive_button_y,
-    Data.rules.revive_button_width, Data.rules.revive_button_height, 2, 2,
-    affordable and self.colors.foreground or
-      graphics.color_with_alpha(self.colors.foreground, 0.35), 1)
-  graphics.set_color(affordable and self.colors.gold or
-    graphics.color_with_alpha(self.colors.foreground, 0.4))
-  love.graphics.printf(affordable and "REVIVE  " .. cost .. " DUST" or
-    "R  NEW STAR", 0, Data.rules.revive_button_y - 4, aw, "center")
+  graphics.set_color(self.colors.gold)
+  love.graphics.printf("STAR POINTS +" .. self.game.run_star_points,
+    0, ah / 2 + 4, aw, "center")
+  graphics.set_color(self.colors.foreground)
+  love.graphics.printf("CONSTELLATION", 0, ah / 2 + 24, aw, "center")
   love.graphics.pop()
-end
-
-function HUD:draw_revive_transition(progress)
-  local fade = 1 - math.min(progress * 2.5, 1)
-  if fade > 0 then
-    graphics.rectangle(aw / 2, ah / 2, aw, ah, nil, nil,
-      {0, 0, 0, fade * 0.62})
-  end
-  local flash = math.max(0, 1 - math.abs(progress - 0.12) / 0.08)
-  if flash > 0 then
-    graphics.rectangle(aw / 2, ah / 2, aw, ah, nil, nil,
-      graphics.color_with_alpha(self.colors.accent, flash * 0.2))
-  end
 end

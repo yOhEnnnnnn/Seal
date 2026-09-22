@@ -21,7 +21,7 @@ require("enemy")
 require("player")
 require("hud")
 require("arena")
-require("sidebar")
+require("skill_tree")
 require("game")
 
 function love.load()
@@ -42,6 +42,10 @@ end
 
 function love.keyreleased(key, scancode)
   game:keyreleased(key, scancode)
+end
+
+function love.focus(focused)
+  game:focus(focused)
 end
 
 function love.mousepressed(x, y, button)

@@ -29,6 +29,12 @@ function Game:init()
   self.draw_scene_action = function() self:draw_scene() end
   self.draw_shadow_action = function() self:draw_shadow() end
   self.draw_composite_action = function() self:draw_composite() end
+  self.star_points = Data.rules.starting_star_points
+  self.upgrades = {}
+  for _, branch in ipairs(Data.upgrades.branches) do
+    for _, node in ipairs(branch.nodes) do self.upgrades[node.key] = 0 end
+  end
+  self.skill_tree = SkillTree(self)
   self:reset_run()
 end
 
@@ -38,26 +44,36 @@ function Game:reset_run()
   self.elapsed_time = 0
   self.difficulty_level = 0
   self.score, self.state = 0, "playing"
-  self.revive_count = 0
   self.death_transition_time = 0
-  self.revive_transition_time = 0
   self.boss_level = 0
+  self.boss_kills = 0
+  self.run_star_points = 0
+  self.next_star_point_score = Data.rules.star_point_score_step
   self.next_boss_score = EnemyConfig.boss_score_base
   self.pending_boss_level = nil
-  self.coins = Data.rules.starting_coins
-  self.coin_progress = 0
-  self.upgrades = {
-    hit_power = 0,
-    ball_count = 0,
-    ball_speed = 0,
-    blast_radius = 0,
-    blast_damage = 0,
-  }
   self.enemy_traits = {haste = 0, armor = 0, fission = 0}
   self.arena = Arena(self)
   self.hud = HUD(self)
-  self.sidebar = Sidebar(self)
   self.arena:start()
+end
+
+function Game:award_star_points(amount)
+  amount = math.max(0, math.floor(amount or 0))
+  self.star_points = self.star_points + amount
+  self.run_star_points = self.run_star_points + amount
+  return amount
+end
+
+function Game:check_star_point_awards(enemy)
+  while self.score >= self.next_star_point_score do
+    self:award_star_points(1)
+    self.next_star_point_score = self.next_star_point_score +
+      Data.rules.star_point_score_step
+  end
+  if enemy and enemy.is_boss then
+    self.boss_kills = self.boss_kills + 1
+    self:award_star_points(Data.rules.star_point_boss_bonus)
+  end
 end
 
 function Game:enemy_killed(enemy)
@@ -67,8 +83,7 @@ function Game:enemy_killed(enemy)
   local kill_score = enemy and (enemy.kill_score or base_score) or 1
   self.score = self.score + kill_score
 
-  self:add_coin_progress(
-    enemy and enemy.coin_value or EnemyConfig.coin_per_enemy)
+  self:check_star_point_awards(enemy)
   self:queue_kill_feedback(enemy)
   self:check_boss_spawn()
 
@@ -132,52 +147,15 @@ function Game:fail()
   self.audio:play("death_snap")
 end
 
-function Game:get_revive_cost()
-  return math.floor(Data.rules.revive_base_cost *
-    Data.rules.revive_cost_growth ^ self.revive_count + 0.5)
-end
-
-function Game:revive()
-  if self.state ~= "revive" then return false end
-  local cost = self:get_revive_cost()
-  if self.coins < cost then return false end
-  self.coins = self.coins - cost
-  self.revive_count = self.revive_count + 1
-  self.arena:revive()
-  self.revive_transition_time = 0
-  self.state = "reviving"
-  self.audio:play("revive")
-  return true
-end
-
-function Game:is_revive_button(x, y)
-  return math.abs(x - aw / 2) <= Data.rules.revive_button_width / 2 and
-    math.abs(y - Data.rules.revive_button_y) <=
-      Data.rules.revive_button_height / 2
-end
-
-function Game:add_coins(amount)
-  self.coins = self.coins + math.max(0, math.floor(amount or 0))
-end
-
-function Game:add_coin_progress(amount)
-  self.coin_progress = self.coin_progress + math.max(0, amount or 0)
-  local earned = math.floor(self.coin_progress)
-  if earned == 0 then return 0 end
-  self.coin_progress = self.coin_progress - earned
-  self:add_coins(earned)
-  return earned
-end
-
 function Game:update_mouse_cursor()
   local mouse_x = self.canvas:to_canvas_position(love.mouse.getPosition())
-  local combat_view = self.state == "playing" or self.state == "reviving"
-  love.mouse.setVisible(not combat_view or not mouse_x or mouse_x > aw)
+  love.mouse.setVisible(self.state ~= "playing" or not mouse_x)
 end
 
 function Game:update(dt)
   self:update_mouse_cursor()
   if self.state == "playing" then
+    dt = math.min(math.max(dt, 0), Data.rules.max_playing_dt)
     self.elapsed_time = self.elapsed_time + dt
     self.difficulty_level = math.floor(
       self.elapsed_time / EnemyConfig.difficulty_seconds)
@@ -196,21 +174,10 @@ function Game:update(dt)
     self.arena:update_death_transition(
       self.death_transition_time / Data.rules.death_transition_duration, dt)
     if self.death_transition_time == Data.rules.death_transition_duration then
-      self.state = "revive"
-    end
-  elseif self.state == "reviving" then
-    self.revive_transition_time = math.min(
-      self.revive_transition_time + dt,
-      Data.rules.revive_transition_duration)
-    self.arena:update_revive_transition(
-      self.revive_transition_time / Data.rules.revive_transition_duration, dt)
-    if self.revive_transition_time == Data.rules.revive_transition_duration then
-      self.arena:finish_revive_transition()
-      self.state = "playing"
+      self.state = "skill_tree"
     end
   end
-  if self.state == "playing" or self.state == "dying" or
-      self.state == "reviving" then self.camera:update(dt)
+  if self.state == "playing" or self.state == "dying" then self.camera:update(dt)
   else self.camera:reset() end
 end
 
@@ -225,6 +192,10 @@ end
 
 function Game:draw_scene()
   local x, y = self.canvas:to_canvas_position(love.mouse.getPosition())
+  if self.state == "skill_tree" then
+    self.skill_tree:draw(x, y)
+    return
+  end
   local world_x, world_y = self.camera:to_world(x, y)
 
   self.camera:attach()
@@ -238,20 +209,15 @@ function Game:draw_scene()
     self.hud:draw(x, y)
   elseif self.state == "dying" and
       death_progress >= Data.rules.death_result_start then
-    self.hud:draw_revive(self:get_revive_cost())
-  elseif self.state == "revive" then
-    self.hud:draw_revive(self:get_revive_cost())
+    self.hud:draw_death_summary()
   end
-  self.sidebar:draw(x, y)
   if self.state == "dying" then
     self.hud:draw_death_transition(death_progress)
-  elseif self.state == "reviving" then
-    self.hud:draw_revive_transition(
-      self.revive_transition_time / Data.rules.revive_transition_duration)
   end
 end
 
 function Game:draw_shadow()
+  if self.state == "skill_tree" then return end
   love.graphics.push("all")
   love.graphics.setShader(self.shadow_shader)
   love.graphics.setColor(1, 1, 1, 1)
@@ -285,15 +251,23 @@ function Game:keypressed(key)
   if key == "q" and self.state == "playing" then
     self.arena:start_shockwave_charge()
   end
-  if key == "r" and self.state == "revive" then
-    if not self:revive() then self:reset_run() end
+  if (key == "return" or key == "r") and self.state == "skill_tree" then
+    self:reset_run()
   end
 end
 
 function Game:keyreleased(key)
-  if key == "q" and self.state == "playing" then
-    self.arena:release_shockwave()
+  if key == "q" then
+    if self.state == "playing" then
+      self.arena:release_shockwave()
+    else
+      self.arena:cancel_shockwave_charge()
+    end
   end
+end
+
+function Game:focus(focused)
+  if not focused then self.arena:cancel_shockwave_charge() end
 end
 
 function Game:mousepressed(x, y, button)
@@ -301,13 +275,9 @@ function Game:mousepressed(x, y, button)
   local mouse_x, mouse_y = self.canvas:to_canvas_position(x, y)
   if not mouse_x then return end
   if self.state == "playing" then
-    if mouse_x > aw then
-      self.sidebar:mousepressed(mouse_x, mouse_y)
-      return
-    end
     local world_x, world_y = self.camera:to_world(mouse_x, mouse_y)
     self.arena:mousepressed(world_x, world_y)
-  elseif self.state == "revive" and self:is_revive_button(mouse_x, mouse_y) then
-    self:revive()
+  elseif self.state == "skill_tree" then
+    self.skill_tree:mousepressed(mouse_x, mouse_y)
   end
 end

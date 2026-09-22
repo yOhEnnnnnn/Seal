@@ -19,9 +19,13 @@ function Arena:init(game)
   self.shockwave_charge_time = 0
   self.player.on_projectile_bounce = function(kind, enemy)
     if kind == "enemy" then
-      self:add_shockwave_charge(enemy and enemy.is_boss and
-        Data.player.shockwave_boss_charge or
-        Data.player.shockwave_enemy_charge)
+      local charge_level = game.upgrades.shockwave_charge or 0
+      local charge = enemy and enemy.is_boss and
+        Data.player.shockwave_boss_charge + charge_level *
+          Data.upgrades.shockwave_boss_charge_per_level or
+        Data.player.shockwave_enemy_charge + charge_level *
+          Data.upgrades.shockwave_enemy_charge_per_level
+      self:add_shockwave_charge(charge)
     end
   end
   self.projectiles = Group()
@@ -37,12 +41,14 @@ function Arena:start()
 end
 
 function Arena:get_spawn_slot_count()
-  return EnemyConfig.spawn_angular_slots
+  return math.max(1, math.floor(EnemyConfig.spawn_angular_slots or 1))
 end
 
 function Arena:wave_has_enemy(slot)
+  local gap_period = math.floor(EnemyConfig.spawn_gap_period or 0)
+  if gap_period <= 1 then return true end
   return (slot + self.spawn_wave_index * 3) %
-    EnemyConfig.spawn_gap_period ~= 0
+    gap_period ~= 0
 end
 
 function Arena:get_spawn_position(slot)
@@ -85,6 +91,7 @@ function Arena:spawn_enemy_wave()
       count = count + 1
     end
   end
+  if count == 0 then return 0 end
   local formation_duration = math.max(
     (radius_sum / count - EnemyConfig.spawn_circle_radius) /
       self:get_enemy_speed(), 0.01)
@@ -186,6 +193,7 @@ function Arena:add_enemy(x, y, overrides)
 end
 
 function Arena:spawn_boss(level)
+  if #self.enemies >= self.max_enemies then return end
   level = level or 1
   local side = love.math.random(1, 4)
   local outside = math.max(
@@ -222,8 +230,6 @@ function Arena:spawn_boss(level)
       EnemyConfig.boss_contact_damage_max),
     base_score = EnemyConfig.boss_score +
       (level - 1) * EnemyConfig.boss_score_per_level,
-    coin_value = EnemyConfig.boss_coin +
-      (level - 1) * EnemyConfig.boss_coin_per_level,
     is_boss = true,
     color = self.colors.enemy,
     hit_color = self.colors.boss,
@@ -242,12 +248,11 @@ end
 function Arena:spawn_pending_boss()
   local level = self.game.pending_boss_level
   if not level then return end
-  self.game.pending_boss_level = nil
-  self:spawn_boss(level)
+  if self:spawn_boss(level) then self.game.pending_boss_level = nil end
 end
 
 function Arena:on_enemy_removed(enemy)
-  if enemy.reached_center or enemy.removed_without_reward then return end
+  if enemy.reached_center then return end
   self.game:enemy_killed(enemy)
   if enemy.fission and self.game.state == "playing" then
     self.pending_fissions[#self.pending_fissions + 1] = enemy
@@ -274,7 +279,6 @@ function Arena:spawn_pending_fissions()
           v = parent.v,
           contact_damage = parent.contact_damage,
           base_score = EnemyConfig.base_score,
-          coin_value = EnemyConfig.fission_child_coin,
           fission = false,
         })
     end
@@ -338,6 +342,7 @@ local function smoothstep(value)
 end
 
 function Arena:start_death_transition()
+  self:cancel_shockwave_charge()
   local player = self.player
   local max_distance = math.sqrt((aw / 2) ^ 2 + (ah / 2) ^ 2)
   self.death_burst_started = false
@@ -436,70 +441,6 @@ function Arena:update_death_transition(progress, dt)
   if motion_progress > 0 then self.effects:update(dt, self.enemies) end
 end
 
-function Arena:revive()
-  local player = self.player
-  player.dead = false
-  player.hp = player.max_hp
-  player.balls_loaded = player.ball_count
-  player.hit_time = 0
-  player.invincibility_time = Data.rules.revive_invincibility
-  player.revive_progress = 0
-
-  local radius_squared = Data.rules.revive_clear_radius ^ 2
-  for _, enemy in ipairs(self.enemies) do
-    local dx, dy = enemy.x - player.x, enemy.y - player.y
-    if dx * dx + dy * dy <= radius_squared then
-      enemy.removed_without_reward = true
-      enemy:die()
-    else
-      enemy.revive_start_offset_x = enemy.death_offset_x or 0
-      enemy.revive_start_offset_y = enemy.death_offset_y or 0
-      enemy.death_distance = nil
-      enemy.revive_start_scale = enemy.death_scale or 1
-      enemy.revive_start_rotation = enemy.death_rotation or 0
-    end
-  end
-  self.enemies:remove_dead()
-  self.effects:add(RevivePulse{x = player.x, y = player.y})
-  self.game.camera:spring_shake(3.5, math.pi)
-  for index = 1, 16 do
-    local angle = index / 16 * math.pi * 2 + love.math.random() * 0.12
-    self.effects:add(HitParticle{
-      x = player.x,
-      y = player.y,
-      r = angle,
-      speed = 80 + love.math.random() * 90,
-      duration = 0.25 + love.math.random() * 0.2,
-      width = 3 + love.math.random() * 4,
-      color = index % 3 == 0 and self.colors.foreground or
-        self.colors.accent,
-    })
-  end
-end
-
-function Arena:update_revive_transition(progress, dt)
-  local eased = 1 - (1 - progress) ^ 3
-  self.player.revive_progress = progress
-  for _, enemy in ipairs(self.enemies) do
-    local start_scale = enemy.revive_start_scale or 1
-    enemy.death_offset_x = (enemy.revive_start_offset_x or 0) * (1 - eased)
-    enemy.death_offset_y = (enemy.revive_start_offset_y or 0) * (1 - eased)
-    enemy.death_scale = start_scale + (1 - start_scale) * eased
-    enemy.death_rotation = (enemy.revive_start_rotation or 0) * (1 - eased)
-  end
-  self.effects:update(dt, self.enemies)
-end
-
-function Arena:finish_revive_transition()
-  self.player.revive_progress = nil
-  for _, enemy in ipairs(self.enemies) do
-    enemy.death_offset_x, enemy.death_offset_y = nil, nil
-    enemy.death_scale, enemy.death_rotation = nil, nil
-    enemy.revive_start_offset_x, enemy.revive_start_offset_y = nil, nil
-    enemy.revive_start_scale, enemy.revive_start_rotation = nil, nil
-  end
-end
-
 function Arena:draw_crosshair(mouse_x, mouse_y)
   if not mouse_x then return end
   love.graphics.push("all")
@@ -559,6 +500,11 @@ function Arena:start_shockwave_charge()
   return true
 end
 
+function Arena:cancel_shockwave_charge()
+  self.shockwave_charging = false
+  self.shockwave_charge_time = 0
+end
+
 function Arena:update_shockwave_charge(dt)
   if not self.shockwave_charging then return end
   self.shockwave_charge_time = math.min(
@@ -573,12 +519,16 @@ end
 
 function Arena:get_shockwave_stats(power)
   power = math.max(0, math.min(power or 0, 1))
+  local radius_bonus = (self.game.upgrades.shockwave_radius or 0) *
+    Data.upgrades.shockwave_radius_per_level
+  local damage_bonus = (self.game.upgrades.shockwave_damage or 0) *
+    Data.upgrades.shockwave_damage_per_level
   local radius = Data.player.shockwave_base_radius +
     (Data.player.shockwave_max_radius - Data.player.shockwave_base_radius) *
-      power
+      power + radius_bonus
   local damage = math.floor(Data.player.shockwave_base_damage +
     (Data.player.shockwave_max_damage - Data.player.shockwave_base_damage) *
-      power + 0.5)
+      power + damage_bonus + 0.5)
   return radius, damage
 end
 
@@ -611,12 +561,16 @@ end
 
 function Arena:get_blast_stats(projectile)
   local momentum = projectile and projectile.momentum or 0
+  local momentum_step = math.max(2,
+    Data.player.blast_momentum_per_damage -
+      (self.game.upgrades.blast_momentum or 0) *
+        Data.upgrades.blast_momentum_step_reduction_per_level)
   local radius = Data.player.blast_base_radius + math.sqrt(momentum) *
     Data.player.blast_radius_per_sqrt_momentum +
     self.game.upgrades.blast_radius * Data.upgrades.blast_radius_per_level
   local damage = Data.player.blast_base_damage +
     self.game.upgrades.blast_damage * Data.upgrades.blast_damage_per_level +
-    math.floor(momentum / Data.player.blast_momentum_per_damage)
+    math.floor(momentum / momentum_step)
   return radius, damage
 end
 
