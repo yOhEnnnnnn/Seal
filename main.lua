@@ -40,6 +40,10 @@ function love.keypressed(key, scancode)
   game:keypressed(key, scancode)
 end
 
+function love.keyreleased(key, scancode)
+  game:keyreleased(key, scancode)
+end
+
 function love.mousepressed(x, y, button)
   game:mousepressed(x, y, button)
 end

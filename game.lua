@@ -283,10 +283,16 @@ function Game:keypressed(key)
     self.arena:detonate_volley()
   end
   if key == "q" and self.state == "playing" then
-    self.arena:activate_shockwave()
+    self.arena:start_shockwave_charge()
   end
   if key == "r" and self.state == "revive" then
     if not self:revive() then self:reset_run() end
+  end
+end
+
+function Game:keyreleased(key)
+  if key == "q" and self.state == "playing" then
+    self.arena:release_shockwave()
   end
 end
 

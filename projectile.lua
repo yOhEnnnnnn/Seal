@@ -53,8 +53,8 @@ function Projectile:add_momentum()
   self:update_momentum_stats()
 end
 
-function Projectile:notify_bounce()
-  if self.on_bounce then self.on_bounce() end
+function Projectile:notify_bounce(kind, target)
+  if self.on_bounce then self.on_bounce(kind, target) end
 end
 
 function Projectile:update(dt, enemies)
@@ -128,7 +128,7 @@ function Projectile:hit_wall(hit_x, hit_y)
     math.min(self.x, self.arena_width - self.radius - 0.01))
   self.y = math.max(self.radius + 0.01,
     math.min(self.y, self.arena_height - self.radius - 0.01))
-  self:notify_bounce()
+  self:notify_bounce("wall")
 end
 
 function Projectile:spawn_wall_impact_particles(hit_x, hit_y)
@@ -189,7 +189,7 @@ function Projectile:check_hits(enemies, end_x, end_y)
   self.ignore_time = 0.06
   nearest:spawn_hit_particles(self.r + math.pi, self.color)
   self:add_momentum()
-  self:notify_bounce()
+  self:notify_bounce("enemy", nearest)
   local normal_x, normal_y = self.x - nearest.x, self.y - nearest.y
   local normal_length = math.sqrt(normal_x * normal_x + normal_y * normal_y)
   if normal_length == 0 then

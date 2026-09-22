@@ -90,7 +90,8 @@ ShockwavePulse:implement(GameObject)
 
 function ShockwavePulse:init(args)
   self:init_game_object(args)
-  self.radius = self.radius or Data.player.shockwave_radius
+  self.radius = self.radius or Data.player.shockwave_base_radius
+  self.power = self.power or 0
   self.duration = Data.player.shockwave_duration
   self.time = 0
 end
@@ -105,7 +106,8 @@ function ShockwavePulse:draw()
   local expansion = 1 - (1 - progress) ^ 3
   graphics.circle(self.x, self.y, self.radius * expansion,
     graphics.color_with_alpha(
-      Data.theme.colors.accent, (1 - progress) * 0.9), 2)
+      Data.theme.colors.accent, (1 - progress) * 0.9),
+    2 + self.power * 1.5)
 end
 
 DetonationBurst = Object:extend()

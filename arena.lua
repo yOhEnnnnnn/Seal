@@ -15,8 +15,14 @@ function Arena:init(game)
     upgrades = game.upgrades,
   }
   self.shockwave_charge = 0
-  self.player.on_projectile_bounce = function()
-    self:add_shockwave_charge()
+  self.shockwave_charging = false
+  self.shockwave_charge_time = 0
+  self.player.on_projectile_bounce = function(kind, enemy)
+    if kind == "enemy" then
+      self:add_shockwave_charge(enemy and enemy.is_boss and
+        Data.player.shockwave_boss_charge or
+        Data.player.shockwave_enemy_charge)
+    end
   end
   self.projectiles = Group()
   self.effects = Group()
@@ -304,6 +310,7 @@ end
 
 function Arena:update(dt, aim_x, aim_y)
   if self.game.state ~= "playing" then return end
+  self:update_shockwave_charge(dt)
   self.player:update(dt)
   self:update_enemy_spawning(dt)
 
@@ -532,27 +539,62 @@ end
 function Arena:add_shockwave_charge(amount)
   self.shockwave_charge = math.min(
     self.shockwave_charge + (amount or 1),
-    Data.player.shockwave_charge_required)
+    Data.player.shockwave_charge_max)
   return self.shockwave_charge
 end
 
 function Arena:is_shockwave_ready()
-  return self.shockwave_charge >= Data.player.shockwave_charge_required
+  return self.shockwave_charge >= Data.player.shockwave_charge_max
 end
 
-function Arena:activate_shockwave()
+function Arena:get_shockwave_power()
+  return math.min(self.shockwave_charge_time /
+    Data.player.shockwave_charge_duration, 1)
+end
+
+function Arena:start_shockwave_charge()
+  if not self:is_shockwave_ready() or self.shockwave_charging then return false end
+  self.shockwave_charging = true
+  self.shockwave_charge_time = 0
+  return true
+end
+
+function Arena:update_shockwave_charge(dt)
+  if not self.shockwave_charging then return end
+  self.shockwave_charge_time = math.min(
+    self.shockwave_charge_time + dt,
+    Data.player.shockwave_charge_duration)
+end
+
+function Arena:release_shockwave()
+  if not self.shockwave_charging then return false end
+  return self:activate_shockwave(self:get_shockwave_power())
+end
+
+function Arena:get_shockwave_stats(power)
+  power = math.max(0, math.min(power or 0, 1))
+  local radius = Data.player.shockwave_base_radius +
+    (Data.player.shockwave_max_radius - Data.player.shockwave_base_radius) *
+      power
+  local damage = math.floor(Data.player.shockwave_base_damage +
+    (Data.player.shockwave_max_damage - Data.player.shockwave_base_damage) *
+      power + 0.5)
+  return radius, damage
+end
+
+function Arena:activate_shockwave(power)
   if not self:is_shockwave_ready() then return false end
 
   self.shockwave_charge = 0
+  self.shockwave_charging = false
+  self.shockwave_charge_time = 0
   local player = self.player
-  local radius = Data.player.shockwave_radius
+  local radius, damage = self:get_shockwave_stats(power)
   for _, enemy in ipairs(self.enemies) do
     local dx, dy = enemy.x - player.x, enemy.y - player.y
     local reach = radius + math.max(enemy.width, enemy.height) / 2
-    if not enemy.dead and not enemy.is_boss and
-        dx * dx + dy * dy <= reach * reach then
-      enemy.removed_without_reward = true
-      enemy:die()
+    if not enemy.dead and dx * dx + dy * dy <= reach * reach then
+      enemy:hit(damage, {score_bonus = 0})
     end
   end
   self.enemies:remove_dead()
@@ -560,6 +602,7 @@ function Arena:activate_shockwave()
     x = player.x,
     y = player.y,
     radius = radius,
+    power = power or 0,
   })
   if self.game.audio then self.game.audio:play("shockwave") end
   if self.game.camera then self.game.camera:spring_shake(2.2, 0) end

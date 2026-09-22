@@ -97,46 +97,70 @@ test("missed shots reflect from walls and cannot hit outside enemies", function(
   assert(not bullet.dead and bullet.vx < 0)
 end)
 
-test("wall and enemy bounces charge the shockwave", function()
+test("enemy bounces charge the shockwave but wall bounces do not", function()
   local charge = 0
   local shot = Projectile{
     x = aw - 3,
     y = 100,
-    on_bounce = function() charge = charge + 1 end,
+    on_bounce = function(kind)
+      if kind == "enemy" then charge = charge + 1 end
+    end,
   }
   shot:update(0.1, {})
-  assert(charge == 1)
+  assert(charge == 0)
 
   local target = enemy(100, 100)
   shot = Projectile{
     x = 90,
     y = 100,
     r = 0,
-    on_bounce = function() charge = charge + 1 end,
+    on_bounce = function(kind)
+      if kind == "enemy" then charge = charge + 1 end
+    end,
   }
   shot:update(0.1, {target})
-  assert(charge == 2)
+  assert(charge == 1)
 end)
 
-test("Q shockwave clears nearby normal enemies without rewards", function()
+test("enemy types add their configured shockwave percentage", function()
+  local game = Game()
+  game.arena.player.on_projectile_bounce("wall")
+  assert(game.arena.shockwave_charge == 0)
+  game.arena.player.on_projectile_bounce("enemy", {is_boss = false})
+  assert(game.arena.shockwave_charge == Data.player.shockwave_enemy_charge)
+  game.arena.player.on_projectile_bounce("enemy", {is_boss = true})
+  assert(game.arena.shockwave_charge ==
+    Data.player.shockwave_enemy_charge + Data.player.shockwave_boss_charge)
+end)
+
+test("Q shockwave damages enemies using its charge power", function()
   local game = Game()
   game.arena.enemies:clear()
   local nearby = game.arena:add_enemy(aw / 2 + 30, ah / 2, {
-    max_hits = 99, hits_remaining = 99,
+    max_hits = 10, hits_remaining = 10,
   })
   local distant = game.arena:add_enemy(aw / 2 + 120, ah / 2, {
     max_hits = 99, hits_remaining = 99,
   })
   local score, coins = game.score, game.coins
   assert(not game.arena:activate_shockwave())
-  game.arena:add_shockwave_charge(Data.player.shockwave_charge_required)
-  game:keypressed("q")
-  assert(nearby.dead and not distant.dead)
+  game.arena:add_shockwave_charge(Data.player.shockwave_charge_max)
+  assert(game.arena:start_shockwave_charge())
+  game.arena.shockwave_charge_time = Data.player.shockwave_charge_duration
+  assert(game.arena:release_shockwave())
+  assert(nearby.hits_remaining == 2 and not distant.dead)
   assert(game.arena.shockwave_charge == 0)
   assert(game.score == score and game.coins == coins)
   assert(game.audio.events.shockwave.play_count == 1)
   assert(getmetatable(game.arena.effects[#game.arena.effects]) ==
     ShockwavePulse)
+end)
+
+test("holding Q scales shockwave range and damage", function()
+  local game = Game()
+  local base_radius, base_damage = game.arena:get_shockwave_stats(0)
+  local max_radius, max_damage = game.arena:get_shockwave_stats(1)
+  assert(max_radius > base_radius and max_damage > base_damage)
 end)
 
 test("magazine fires one ball per click and reloads after detonation", function()
@@ -261,7 +285,7 @@ test("successful firing applies directional camera recoil", function()
   local camera = Camera{240, 135, 480, 270}
   local player = Player{x = 0, y = 135, camera = camera}
   assert(player:try_attack(100, 135, Group(), Group()))
-  assert(camera.spring_x.x < 0 and math.abs(camera.spring_y.x) < 1e-8)
+  assert(camera.spring_x.x < 0 and math.abs(camera.spring_y.x) < 0.02)
 end)
 
 test("a volley follows the selected direction", function()

@@ -57,6 +57,30 @@ function HUD:draw_ammo(player)
   end
 end
 
+function HUD:draw_shockwave_charge()
+  local charge = self.game.arena.shockwave_charge
+  local ready = self.game.arena:is_shockwave_ready()
+  local charging = self.game.arena.shockwave_charging
+  local power = self.game.arena:get_shockwave_power()
+  local x, width = 128, 58
+  graphics.set_color(charging or ready and self.colors.gold or self.colors.muted)
+  love.graphics.printf(charging and
+    "POWER " .. math.floor(power * 100 + 0.5) .. "%" or
+    (ready and "Q READY" or "Q " .. math.floor(charge + 0.5) .. "%"),
+    x, gh - 17, width, "center")
+
+  graphics.rectangle(x + width / 2, gh - 3, width, 2, 1, 1,
+    self.colors.background_light)
+  local fill_width = charging and width * power or
+    width * charge / Data.player.shockwave_charge_max
+  if fill_width > 0 then
+    graphics.rectangle(x + fill_width / 2, gh - 3,
+      fill_width, 2, 1, 1,
+      charging and self.colors.gold or
+      (ready and self.colors.gold or self.colors.accent))
+  end
+end
+
 function HUD:draw_combat_status()
   local player = self.game.arena.player
   graphics.rectangle(aw / 2, gh - 10, aw, 20, nil, nil,
@@ -65,13 +89,7 @@ function HUD:draw_combat_status()
   self:draw_ammo(player)
 
   love.graphics.setFont(self.game.small_font)
-  local charge = self.game.arena.shockwave_charge
-  local required = Data.player.shockwave_charge_required
-  local shockwave_ready = self.game.arena:is_shockwave_ready()
-  graphics.set_color(shockwave_ready and self.colors.gold or self.colors.muted)
-  love.graphics.printf(shockwave_ready and "Q READY" or
-    "Q " .. charge .. "/" .. required,
-    128, gh - 17, 58, "center")
+  self:draw_shockwave_charge()
 
   graphics.set_color(self.colors.accent)
   love.graphics.printf("NOVA " .. self:get_total_momentum(),
